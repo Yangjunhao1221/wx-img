@@ -258,6 +258,12 @@
   font-weight: 500;
 }
 
+.layout-info-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .btn-change-layout {
   font-size: 12px;
   padding: 4px 12px;
@@ -265,6 +271,23 @@
   color: white;
   border: none;
   border-radius: 4px;
+}
+
+.btn-save-primary {
+  font-size: 13px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+  transition: all 0.3s;
+}
+
+.btn-save-primary:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 4px rgba(102, 126, 234, 0.3);
 }
 
 /* 空状态 */

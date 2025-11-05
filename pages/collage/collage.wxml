@@ -73,7 +73,12 @@
       <!-- 布局信息提示 -->
       <view class="layout-info-bar" wx:if="{{currentLayoutTemplate}}">
         <text class="layout-info-text">{{currentLayoutTemplate.name}} ({{currentLayoutTemplate.imageCount}}张)</text>
-        <button class="btn-change-layout" bindtap="changeLayout">更换布局</button>
+        <view class="layout-info-actions">
+          <button class="btn-change-layout" bindtap="changeLayout">更换布局</button>
+          <button class="btn-save-primary" bindtap="exportImage" wx:if="{{selectedImages.length > 0}}">
+            保存到相册
+          </button>
+        </view>
       </view>
     </view>
 
@@ -207,7 +212,7 @@
         清空
       </button>
       <button class="action-btn primary" bindtap="exportImage" wx:if="{{selectedImages.length > 0}}">
-        保存
+        保存到相册
       </button>
     </view>
     </view>
