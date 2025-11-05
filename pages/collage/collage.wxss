@@ -47,7 +47,7 @@
   display: block;
 }
 
-/* 画布比例选择 */
+/* 画布比例选择 - 布局选择页面（已移除，现在在编辑页面） */
 .aspect-ratio-section {
   padding: 16px 20px;
   background: #fff;
@@ -98,6 +98,53 @@
 }
 
 .aspect-ratio-item.active .ratio-label {
+  color: white;
+}
+
+/* 画布比例选择 - 编辑页面内联样式 */
+.control-item-full {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 8px;
+}
+
+.aspect-ratio-scroll-inline {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.aspect-ratio-list-inline {
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.aspect-ratio-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background: #f5f5f5;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 16px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.aspect-ratio-chip.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.25);
+}
+
+.ratio-chip-label {
+  font-size: 12px;
+  color: #333;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aspect-ratio-chip.active .ratio-chip-label {
   color: white;
 }
 
