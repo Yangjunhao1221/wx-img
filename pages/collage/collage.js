@@ -49,6 +49,9 @@ Page({
     backgroundColor: '#FFFFFF',
     backgroundImage: '',
 
+    // 图片显示模式
+    imageFitMode: 'cover', // 'cover' 填满槽位, 'contain' 完全显示
+
     // 水印设置
     enableWatermark: false,
     watermarkText: '',
@@ -939,24 +942,43 @@ Page({
           that.roundRect(ctx, x, y, width, height, cornerRadius);
           ctx.clip();
 
-          // 计算图片在容器中的显示尺寸和位置（保持宽高比，居中显示）
+          // 计算图片在容器中的显示尺寸和位置
           const imgRatio = img.width / img.height;
           const containerRatio = width / height;
+          const fitMode = that.data.imageFitMode; // 'cover' 或 'contain'
 
           let drawWidth, drawHeight, drawX, drawY;
 
-          if (imgRatio > containerRatio) {
-            // 图片比容器宽，以容器宽度为准
-            drawWidth = width;
-            drawHeight = width / imgRatio;
-            drawX = x;
-            drawY = y + (height - drawHeight) / 2;
+          if (fitMode === 'cover') {
+            // cover模式: 填满容器,可能裁剪图片
+            if (imgRatio > containerRatio) {
+              // 图片比容器宽,以容器高度为准
+              drawHeight = height;
+              drawWidth = height * imgRatio;
+              drawX = x + (width - drawWidth) / 2;
+              drawY = y;
+            } else {
+              // 图片比容器窄,以容器宽度为准
+              drawWidth = width;
+              drawHeight = width / imgRatio;
+              drawX = x;
+              drawY = y + (height - drawHeight) / 2;
+            }
           } else {
-            // 图片比容器高，以容器高度为准
-            drawHeight = height;
-            drawWidth = height * imgRatio;
-            drawX = x + (width - drawWidth) / 2;
-            drawY = y;
+            // contain模式: 完全显示图片,可能有留白
+            if (imgRatio > containerRatio) {
+              // 图片比容器宽,以容器宽度为准
+              drawWidth = width;
+              drawHeight = width / imgRatio;
+              drawX = x;
+              drawY = y + (height - drawHeight) / 2;
+            } else {
+              // 图片比容器窄,以容器高度为准
+              drawHeight = height;
+              drawWidth = height * imgRatio;
+              drawX = x + (width - drawWidth) / 2;
+              drawY = y;
+            }
           }
 
           // 绘制图片对象
@@ -965,7 +987,7 @@ Page({
           // 恢复状态
           ctx.restore();
 
-          console.log('图片绘制完成');
+          console.log('图片绘制完成, 模式:', fitMode);
           resolve();
         } catch (error) {
           console.error('绘制图片失败:', error);
@@ -2066,31 +2088,34 @@ Page({
     });
   },
 
-  // 更换布局
+  // 更换布局 - 保留已有图片
   changeLayout () {
-    wx.showModal({
-      title: '提示',
-      content: '更换布局将清空已添加的图片,是否继续?',
-      success: (res) => {
-        if (res.confirm) {
-          this.setData({
-            workflowStep: 'selectLayout',
-            selectedLayout: null,
-            currentLayoutTemplate: null,
-            imageSlots: [],
-            selectedImages: []
-          });
-
-          // 清空Canvas
-          const ctx = this._ctx;
-          const { canvasWidth, canvasHeight } = this.data;
-          if (ctx) {
-            ctx.fillStyle = this.data.backgroundColor;
-            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-          }
-        }
-      }
+    // 直接返回布局选择页面,不清空图片
+    this.setData({
+      workflowStep: 'selectLayout'
     });
+    console.log('返回布局选择页面,保留已有图片');
+  },
+
+  // 切换图片显示模式
+  toggleImageFitMode () {
+    const newMode = this.data.imageFitMode === 'cover' ? 'contain' : 'cover';
+    const modeName = newMode === 'cover' ? '填满' : '完全显示';
+
+    this.setData({
+      imageFitMode: newMode
+    }, () => {
+      // 重新绘制Canvas
+      this.updateCanvas();
+
+      wx.showToast({
+        title: `图片显示: ${modeName}`,
+        icon: 'success',
+        duration: 1500
+      });
+    });
+
+    console.log('切换图片显示模式:', newMode);
   },
 
   // 切换图片数量分类
@@ -2117,7 +2142,7 @@ Page({
     }
   },
 
-  // 布局选择 - 新流程
+  // 布局选择 - 新流程 (保留已有图片)
   onLayoutSelect (e) {
     const that = this;
     const index = parseInt(e.currentTarget.dataset.index);
@@ -2131,21 +2156,48 @@ Page({
       const template = displayedTemplates[index];
       console.log('选中的布局:', template.name, '图片数量:', template.imageCount);
 
-      // 初始化图片槽位
-      const imageSlots = [];
-      for (let i = 0; i < template.imageCount; i++) {
-        imageSlots.push({
-          index: i,
-          image: null,  // 暂无图片
-          isEmpty: true
+      // 获取当前已有的图片
+      const existingImages = [];
+      if (this.data.imageSlots && this.data.imageSlots.length > 0) {
+        this.data.imageSlots.forEach(slot => {
+          if (!slot.isEmpty && slot.image) {
+            existingImages.push(slot.image);
+          }
         });
       }
+      console.log('已有图片数量:', existingImages.length);
+
+      // 初始化新布局的图片槽位,并迁移已有图片
+      const imageSlots = [];
+      const selectedImages = [];
+
+      for (let i = 0; i < template.imageCount; i++) {
+        if (i < existingImages.length) {
+          // 迁移已有图片到新布局
+          imageSlots.push({
+            index: i,
+            image: existingImages[i],
+            isEmpty: false
+          });
+          selectedImages.push(existingImages[i]);
+          console.log('迁移图片到槽位', i, ':', existingImages[i].path);
+        } else {
+          // 空槽位
+          imageSlots.push({
+            index: i,
+            image: null,
+            isEmpty: true
+          });
+        }
+      }
+
+      console.log('新布局槽位数:', template.imageCount, '已填充:', selectedImages.length);
 
       this.setData({
         selectedLayout: index,
         currentLayoutTemplate: template,
         imageSlots: imageSlots,
-        selectedImages: [],  // 清空已选图片
+        selectedImages: selectedImages,
         workflowStep: 'addImages'  // 进入添加图片阶段
       }, () => {
         console.log('布局选择完成,准备绘制占位框');
@@ -2168,8 +2220,14 @@ Page({
             }
           }, 500);
         } else {
-          // Canvas已初始化,直接绘制
-          that.drawPlaceholders();
+          // Canvas已初始化,检查是否有图片需要绘制
+          if (selectedImages.length > 0) {
+            // 有图片,直接更新Canvas
+            that.updateCanvas();
+          } else {
+            // 无图片,绘制占位框
+            that.drawPlaceholders();
+          }
         }
       });
 

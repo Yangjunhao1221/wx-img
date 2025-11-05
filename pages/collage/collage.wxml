@@ -118,15 +118,24 @@
       <view class="section-header">
         <text class="section-title">样式</text>
       </view>
-      
+
       <view class="style-controls">
+        <!-- 图片显示模式 -->
+        <view class="control-item">
+          <text class="control-label">图片显示</text>
+          <view class="control-switch-wrapper">
+            <text class="switch-label">{{imageFitMode === 'cover' ? '填满' : '完全显示'}}</text>
+            <switch checked="{{imageFitMode === 'cover'}}" bindchange="toggleImageFitMode" color="#007AFF"/>
+          </view>
+        </view>
+
         <!-- 间距 -->
         <view class="control-item">
           <text class="control-label">间距</text>
           <slider class="control-slider" value="{{spacing}}" min="0" max="50" bindchange="onSpacingChange"/>
           <text class="control-value">{{spacing}}</text>
         </view>
-        
+
         <!-- 圆角 -->
         <view class="control-item">
           <text class="control-label">圆角</text>

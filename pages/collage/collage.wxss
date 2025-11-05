@@ -652,6 +652,18 @@
   text-align: right;
 }
 
+.control-switch-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.switch-label {
+  font-size: 14px;
+  color: #666;
+}
+
 .color-picker {
   width: 40px;
   height: 32px;
