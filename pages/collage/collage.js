@@ -474,14 +474,17 @@ Page({
     if (typeof ratioValue === 'string') {
       const ratio = this.data.aspectRatios.find(r => r.value === ratioValue);
       if (ratio) {
+        console.log('切换画布比例:', ratio.label);
+
+        // 第一步：设置新比例
         this.setData({
           aspectRatio: ratio.value
         }, () => {
-          // setData完成后，重新计算画布尺寸
-          that.calculateCanvasSize(ratio.width, ratio.height);
+          // 第二步：计算并设置新的画布尺寸（带回调）
+          that.calculateCanvasSizeWithCallback(ratio.width, ratio.height, () => {
+            // 第三步：画布尺寸更新完成后，重新绘制
+            console.log('画布尺寸已更新，开始重绘');
 
-          // 等待画布尺寸更新完成后，重新绘制
-          setTimeout(() => {
             if (that.data.currentLayoutTemplate) {
               // 检查是否有图片
               const hasImages = that.data.imageSlots && that.data.imageSlots.some(slot => !slot.isEmpty);
@@ -496,7 +499,7 @@ Page({
                 that.drawPlaceholders();
               }
             }
-          }, 50);
+          });
         });
 
         wx.showToast({
@@ -504,8 +507,6 @@ Page({
           icon: 'success',
           duration: 1500
         });
-
-        console.log('切换画布比例:', ratio.label, '新尺寸将重新计算');
       }
     } else {
       // 如果是从picker获取的索引
@@ -513,9 +514,7 @@ Page({
       this.setData({
         aspectRatio: ratio.value
       }, () => {
-        that.calculateCanvasSize(ratio.width, ratio.height);
-
-        setTimeout(() => {
+        that.calculateCanvasSizeWithCallback(ratio.width, ratio.height, () => {
           if (that.data.currentLayoutTemplate) {
             const hasImages = that.data.imageSlots && that.data.imageSlots.some(slot => !slot.isEmpty);
             if (hasImages) {
@@ -524,7 +523,7 @@ Page({
               that.drawPlaceholders();
             }
           }
-        }, 50);
+        });
       });
     }
   },
@@ -569,6 +568,91 @@ Page({
       canvasWidth: newCanvasWidth,
       canvasHeight: newCanvasHeight
     });
+  },
+
+  // 计算画布尺寸（带回调）
+  calculateCanvasSizeWithCallback (width, height, callback) {
+    const that = this;
+
+    // 获取屏幕信息
+    const windowInfo = wx.getWindowInfo();
+    const screenWidth = windowInfo.screenWidth;
+
+    // 预留边距，确保画布不超出屏幕
+    const margin = 40; // 左右各20px边距
+    const maxCanvasWidth = screenWidth - margin;
+
+    // 根据宽高比计算画布尺寸
+    const aspectRatio = width / height;
+    let canvasWidth, canvasHeight;
+
+    if (aspectRatio >= 1) {
+      // 横向或正方形，以宽度为准
+      canvasWidth = Math.min(maxCanvasWidth, 750); // 最大不超过750px
+      canvasHeight = canvasWidth / aspectRatio;
+    } else {
+      // 纵向，以高度为准，但要确保宽度不超出屏幕
+      canvasHeight = maxCanvasWidth / aspectRatio;
+      canvasWidth = maxCanvasWidth;
+
+      // 如果高度过大，重新按高度限制计算
+      const maxCanvasHeight = windowInfo.screenHeight * 0.6; // 最大高度为屏幕高度的60%
+      if (canvasHeight > maxCanvasHeight) {
+        canvasHeight = maxCanvasHeight;
+        canvasWidth = canvasHeight * aspectRatio;
+      }
+    }
+
+    const newCanvasWidth = Math.floor(canvasWidth);
+    const newCanvasHeight = Math.floor(canvasHeight);
+
+    console.log('计算新画布尺寸:', newCanvasWidth, 'x', newCanvasHeight);
+
+    // 使用回调确保setData完成后再执行后续操作
+    this.setData({
+      canvasWidth: newCanvasWidth,
+      canvasHeight: newCanvasHeight
+    }, () => {
+      console.log('画布尺寸setData完成:', that.data.canvasWidth, 'x', that.data.canvasHeight);
+
+      // 重新设置Canvas节点的实际绘制尺寸
+      that.resizeCanvasNode(newCanvasWidth, newCanvasHeight, () => {
+        console.log('Canvas节点尺寸已更新');
+        if (callback && typeof callback === 'function') {
+          callback();
+        }
+      });
+    });
+  },
+
+  // 重新设置Canvas节点尺寸
+  resizeCanvasNode (width, height, callback) {
+    const canvas = this._canvas;
+
+    if (!canvas) {
+      console.error('Canvas节点不存在，无法调整尺寸');
+      if (callback) callback();
+      return;
+    }
+
+    // 获取设备像素比
+    const dpr = wx.getWindowInfo().pixelRatio || 2;
+    console.log('重新设置Canvas节点尺寸, dpr:', dpr, 'width:', width, 'height:', height);
+
+    // 设置canvas实际绘制尺寸(考虑设备像素比)
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+
+    // 获取绘图上下文并设置缩放
+    const ctx = this._ctx;
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+      console.log('Canvas上下文已缩放');
+    }
+
+    if (callback) {
+      callback();
+    }
   },
 
   // 更新间距
