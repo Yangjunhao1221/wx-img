@@ -1,0 +1,146 @@
+<!--pages/history/history.wxml-->
+<view class="container">
+  <!-- 头部操作栏 -->
+  <view class="header" wx:if="{{!isEmpty}}">
+    <view class="header-left">
+      <text class="page-title">📚 历史记录</text>
+      <text class="items-count">共 {{historyList.length}} 项</text>
+    </view>
+    
+    <view class="header-actions">
+      <button 
+        class="btn btn-outline btn-sm" 
+        bindtap="toggleEditMode"
+      >
+        {{isEditing ? '完成' : '编辑'}}
+      </button>
+      
+      <button 
+        class="btn btn-danger btn-sm" 
+        bindtap="clearAllHistory"
+        wx:if="{{!isEditing}}"
+      >
+        🗑️ 清空
+      </button>
+    </view>
+  </view>
+
+  <!-- 编辑模式操作栏 -->
+  <view class="edit-actions" wx:if="{{isEditing && !isEmpty}}">
+    <view class="edit-left">
+      <button 
+        class="btn btn-outline btn-sm" 
+        bindtap="toggleSelectAll"
+      >
+        {{selectedItems.length === historyList.length ? '取消全选' : '全选'}}
+      </button>
+      <text class="selected-count">已选择 {{selectedItems.length}} 项</text>
+    </view>
+    
+    <view class="edit-right">
+      <button 
+        class="btn btn-primary btn-sm" 
+        bindtap="downloadSelected"
+        disabled="{{selectedItems.length === 0}}"
+      >
+        📥 下载
+      </button>
+      <button 
+        class="btn btn-danger btn-sm" 
+        bindtap="deleteSelected"
+        disabled="{{selectedItems.length === 0}}"
+      >
+        删除
+      </button>
+    </view>
+  </view>
+
+  <!-- 历史记录列表 -->
+  <view class="history-list" wx:if="{{!isEmpty}}">
+    <view 
+      class="history-item {{isEditing ? 'editing' : ''}}" 
+      wx:for="{{historyList}}" 
+      wx:key="id"
+      data-index="{{index}}"
+      bindtap="{{isEditing ? 'onItemSelect' : 'previewImage'}}"
+    >
+      <!-- 选择框 -->
+      <view class="item-selector" wx:if="{{isEditing}}">
+        <view class="checkbox {{selectedItems.includes(index) ? 'checked' : ''}}">
+          <text class="checkmark" wx:if="{{selectedItems.includes(index)}}">✓</text>
+        </view>
+      </view>
+
+      <!-- 预览图 -->
+      <view class="item-image">
+        <image 
+          src="{{item.imagePath}}" 
+          mode="aspectFill"
+          class="preview-image"
+        />
+        <view class="image-overlay">
+          <text class="image-type">{{item.type === 'collage' ? '布局拼图' : '长图拼接'}}</text>
+        </view>
+      </view>
+
+      <!-- 项目信息 -->
+      <view class="item-info">
+        <view class="item-title">{{item.title || '未命名拼图'}}</view>
+        <view class="item-details">
+          <text class="item-time">{{formatTime(item.timestamp)}}</text>
+          <text class="item-count">{{item.imageCount}} 张图片</text>
+        </view>
+      </view>
+
+      <!-- 操作按钮 -->
+      <view class="item-actions" wx:if="{{!isEditing}}">
+        <button 
+          class="action-btn" 
+          data-index="{{index}}"
+          bindtap="downloadImage"
+          catchtap="true"
+        >
+          📥
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 空状态 -->
+  <view class="empty-state" wx:if="{{isEmpty}}">
+    <view class="empty-icon">📚</view>
+    <text class="empty-title">暂无历史记录</text>
+    <text class="empty-desc">开始制作你的第一张拼图吧</text>
+    
+    <view class="empty-actions">
+      <button class="btn btn-primary" bindtap="goToCollage">
+        🧩 布局拼图
+      </button>
+      <button class="btn btn-secondary" bindtap="goToLongImage">
+        📐 长图拼接
+      </button>
+    </view>
+  </view>
+</view>
+
+<wxs module="utils">
+  var formatTime = function(timestamp) {
+    var date = getDate(timestamp);
+    var now = getDate();
+    var diff = now.getTime() - date.getTime();
+    
+    if (diff < 60000) {
+      return '刚刚';
+    } else if (diff < 3600000) {
+      return Math.floor(diff / 60000) + '分钟前';
+    } else if (diff < 86400000) {
+      return Math.floor(diff / 3600000) + '小时前';
+    } else if (diff < 604800000) {
+      return Math.floor(diff / 86400000) + '天前';
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
+  module.exports.formatTime = formatTime;
+</wxs>

@@ -1,0 +1,118 @@
+<!--pages/longimage/longimage.wxml-->
+<view class="container">
+  <!-- 功能区域 -->
+  <scroll-view class="function-area" scroll-y>
+    
+    <!-- 图片选择 -->
+    <view class="section">
+      <view class="section-title">📱 长图拼接</view>
+      <view class="layout-buttons">
+        <button class="btn btn-primary" bindtap="selectImages">
+          🖼️ 选择图片
+        </button>
+        <button class="btn btn-outline" bindtap="clearImages" wx:if="{{selectedImages.length > 0}}">
+          🗑️ 清除
+        </button>
+      </view>
+    </view>
+
+    <!-- 拼接方向 -->
+    <view class="section" wx:if="{{selectedImages.length > 0}}">
+      <view class="section-title">🔄 拼接方向</view>
+      <radio-group class="radio-group" bindchange="onDirectionChange">
+        <label class="radio-item">
+          <radio value="vertical" checked="{{direction === 'vertical'}}"/>
+          <text>⬇️ 竖向拼接</text>
+        </label>
+        <label class="radio-item">
+          <radio value="horizontal" checked="{{direction === 'horizontal'}}"/>
+          <text>➡️ 横向拼接</text>
+        </label>
+      </radio-group>
+    </view>
+
+    <!-- 样式设置 -->
+    <view class="section" wx:if="{{selectedImages.length > 0}}">
+      <view class="section-title">🎨 样式设置</view>
+      
+      <!-- 间距设置 -->
+      <view class="form-item">
+        <text class="form-label">📏 间距</text>
+        <slider value="{{spacing}}" min="0" max="100" bindchange="onSpacingChange" show-value/>
+        <text class="text-secondary">px</text>
+      </view>
+
+      <!-- 圆角设置 -->
+      <view class="form-item">
+        <text class="form-label">🔘 圆角</text>
+        <slider value="{{cornerRadius}}" min="0" max="50" bindchange="onCornerRadiusChange" show-value/>
+        <text class="text-secondary">px</text>
+      </view>
+
+      <!-- 背景颜色 -->
+      <view class="form-item">
+        <text class="form-label">🌈 背景</text>
+        <input class="color-input" type="color" value="{{backgroundColor}}" bindchange="onBackgroundColorChange"/>
+      </view>
+    </view>
+
+    <!-- 导出设置 -->
+    <view class="section" wx:if="{{selectedImages.length > 0}}">
+      <view class="section-title">📤 导出设置</view>
+      <view class="form-item">
+        <text class="form-label">🎯 质量</text>
+        <picker bindchange="onExportQualityChange" value="{{exportQuality}}" range="{{exportFormats}}" range-key="label">
+          <view class="picker">图片质量选择</view>
+        </picker>
+      </view>
+      
+      <view class="export-buttons">
+        <button class="btn btn-primary" bindtap="exportImage">
+          📱 下载长图
+        </button>
+      </view>
+    </view>
+
+  </scroll-view>
+
+  <!-- 预览区域 -->
+  <view class="preview-area">
+    <view class="canvas-container">
+      <canvas
+        type="2d"
+        id="longCanvas"
+        class="canvas"
+        style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; display: block;">
+      </canvas>
+    </view>
+
+    <!-- 图片提示 -->
+    <view class="empty-tip" wx:if="{{selectedImages.length === 0}}">
+      <text>📱 点击选择图片开始长图拼接</text>
+    </view>
+
+    <!-- 已选图片列表 -->
+    <view class="selected-images glass-effect" wx:if="{{selectedImages.length > 0}}">
+      <view class="section-title text-center mb-sm">
+        🔢 图片顺序 ({{selectedImages.length}}/{{maxImages}})
+      </view>
+      <view class="image-list">
+        <view class="image-item" wx:for="{{selectedImages}}" wx:key="index">
+          <image src="{{item.path}}" mode="aspectFill"/>
+          <view class="image-controls">
+            <view class="control-btn" bindtap="moveUp" data-index="{{index}}" wx:if="{{index > 0}}">
+              ⬆️
+            </view>
+            <view class="control-btn" bindtap="moveDown" data-index="{{index}}" wx:if="{{index < selectedImages.length - 1}}">
+              ⬇️
+            </view>
+            <view class="remove-btn" bindtap="removeImage" data-index="{{index}}">
+              ×
+            </view>
+          </view>
+          <text class="image-index">{{index + 1}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

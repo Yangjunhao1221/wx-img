@@ -1,0 +1,72 @@
+<!--index.wxml-->
+<view class="container">
+  <!-- 头部区域 -->
+  <view class="header">
+    <view class="header-content">
+      <text class="app-title">📷 图片拼接工具</text>
+      <text class="app-subtitle">让每一张照片都有完美的呈现</text>
+    </view>
+  </view>
+
+  <!-- 功能卡片区域 -->
+  <view class="features-container">
+    <view class="section-title">✨ 选择功能</view>
+    
+    <view class="features-grid">
+      <navigator
+        class="feature-card"
+        wx:for="{{features}}"
+        wx:key="id"
+        url="{{item.url}}"
+        hover-class="feature-card-hover"
+      >
+        <view class="feature-icon">{{item.icon}}</view>
+        <view class="feature-info">
+          <text class="feature-title">{{item.title}}</text>
+          <text class="feature-subtitle">{{item.subtitle}}</text>
+          <text class="feature-description">{{item.description}}</text>
+        </view>
+        <view class="feature-arrow">→</view>
+      </navigator>
+    </view>
+  </view>
+
+  <!-- 特性介绍 -->
+  <view class="highlights">
+    <view class="section-title">🌟 产品特色</view>
+    
+    <view class="highlight-list">
+      <view class="highlight-item">
+        <view class="highlight-icon">🚀</view>
+        <view class="highlight-text">
+          <text class="highlight-title">简单易用</text>
+          <text class="highlight-desc">直观的操作界面，轻松上手</text>
+        </view>
+      </view>
+      
+      <view class="highlight-item">
+        <view class="highlight-icon">🎨</view>
+        <view class="highlight-text">
+          <text class="highlight-title">多种布局</text>
+          <text class="highlight-desc">丰富的拼图布局，满足不同需求</text>
+        </view>
+      </view>
+      
+      <view class="highlight-item">
+        <view class="highlight-icon">📱</view>
+        <view class="highlight-text">
+          <text class="highlight-title">移动优化</text>
+          <text class="highlight-desc">专为移动端设计，体验流畅</text>
+        </view>
+      </view>
+      
+      <view class="highlight-item">
+        <view class="highlight-icon">💾</view>
+        <view class="highlight-text">
+          <text class="highlight-title">历史记录</text>
+          <text class="highlight-desc">自动保存作品，随时查看管理</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

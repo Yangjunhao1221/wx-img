@@ -1,0 +1,206 @@
+<!--pages/collage/collage.wxml-->
+<view class="container">
+  <!-- Canvas元素 - 始终存在,根据步骤改变样式 -->
+  <view class="global-canvas-wrapper" style="{{workflowStep === 'selectLayout' ? 'position: fixed; left: -9999px; top: -9999px; width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px;' : 'width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px; margin: 20rpx auto;'}}">
+    <canvas
+      type="2d"
+      id="canvas"
+      class="canvas"
+      style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; display: block;"
+      bindtouchstart="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchStart' : ''}}"
+      bindtouchmove="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchMove' : ''}}"
+      bindtouchend="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchEnd' : ''}}">
+    </canvas>
+  </view>
+
+  <!-- 步骤1: 选择布局模板 -->
+  <view class="layout-selection-area" wx:if="{{workflowStep === 'selectLayout'}}">
+    <view class="step-header">
+      <text class="step-title">📐 选择布局模板</text>
+      <text class="step-desc">支持1-16张图片,共{{allLayoutTemplates.length}}种布局</text>
+    </view>
+
+    <!-- 图片数量分类标签 -->
+    <scroll-view class="image-count-tabs" scroll-x>
+      <view class="tabs-container">
+        <view
+          class="tab-item {{selectedImageCount === 0 ? 'active' : ''}}"
+          data-count="{{0}}"
+          bindtap="onImageCountSelect"
+        >
+          <text class="tab-label">全部</text>
+        </view>
+        <view
+          class="tab-item {{selectedImageCount === item.imageCount ? 'active' : ''}}"
+          wx:for="{{layoutGroups}}"
+          wx:key="imageCount"
+          data-count="{{item.imageCount}}"
+          bindtap="onImageCountSelect"
+        >
+          <text class="tab-label">{{item.label}}</text>
+          <text class="tab-count">{{item.count}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <!-- 布局模板网格 -->
+    <scroll-view class="layout-templates-scroll" scroll-y>
+      <view class="layout-templates-grid">
+        <view
+          class="layout-template-card {{selectedLayout === index ? 'selected' : ''}}"
+          wx:for="{{selectedImageCount === 0 ? allLayoutTemplates : layoutGroups[selectedImageCount - 1].templates}}"
+          wx:key="index"
+          data-index="{{index}}"
+          bindtap="onLayoutSelect"
+        >
+          <view class="template-preview">
+            <text class="template-icon">{{item.icon || '▦'}}</text>
+          </view>
+          <view class="template-info">
+            <text class="template-name">{{item.name}}</text>
+            <text class="template-count">{{item.imageCount}}张</text>
+            <text class="template-type">{{item.type === 'grid' ? '网格' : '自定义'}}</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 步骤2/3: 添加图片 / 编辑 -->
+  <view class="editing-area" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}">
+    <!-- 上半部分：Canvas预览区域 -->
+    <view class="image-area">
+      <!-- 布局信息提示 -->
+      <view class="layout-info-bar" wx:if="{{currentLayoutTemplate}}">
+        <text class="layout-info-text">{{currentLayoutTemplate.name}} ({{currentLayoutTemplate.imageCount}}张)</text>
+        <button class="btn-change-layout" bindtap="changeLayout">更换布局</button>
+      </view>
+    </view>
+
+    <!-- 下半部分：控制区域 -->
+    <view class="control-area">
+      <!-- 图片槽位管理 -->
+      <view class="control-section">
+        <view class="section-header">
+          <text class="section-title">图片 ({{selectedImages.length}}/{{currentLayoutTemplate.imageCount}})</text>
+          <button class="btn-add" bindtap="selectImages">一键上传</button>
+        </view>
+
+        <!-- 图片槽位列表 -->
+        <scroll-view class="image-slots-scroll" scroll-x>
+          <view class="image-slots">
+            <view
+              class="slot-item {{item.isEmpty ? 'empty' : 'filled'}}"
+              wx:for="{{imageSlots}}"
+              wx:key="index"
+              data-index="{{index}}"
+              bindtap="onSlotTap"
+            >
+              <!-- 空槽位 -->
+              <view class="slot-empty" wx:if="{{item.isEmpty}}">
+                <text class="slot-plus">+</text>
+                <text class="slot-number">{{index + 1}}</text>
+              </view>
+
+              <!-- 已填充槽位 -->
+              <view class="slot-filled" wx:else>
+                <image src="{{item.image.path}}" mode="aspectFill" class="slot-image"/>
+                <view class="slot-number-badge">{{index + 1}}</view>
+                <view class="slot-remove" catchtap="onSlotRemove" data-index="{{index}}">×</view>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+      </view>
+
+      <!-- 样式控制 -->
+      <view class="control-section">
+      <view class="section-header">
+        <text class="section-title">样式</text>
+      </view>
+      
+      <view class="style-controls">
+        <!-- 间距 -->
+        <view class="control-item">
+          <text class="control-label">间距</text>
+          <slider class="control-slider" value="{{spacing}}" min="0" max="50" bindchange="onSpacingChange"/>
+          <text class="control-value">{{spacing}}</text>
+        </view>
+        
+        <!-- 圆角 -->
+        <view class="control-item">
+          <text class="control-label">圆角</text>
+          <slider class="control-slider" value="{{cornerRadius}}" min="0" max="50" bindchange="onCornerRadiusChange"/>
+          <text class="control-value">{{cornerRadius}}</text>
+        </view>
+        
+        <!-- 背景色 -->
+        <view class="control-item">
+          <text class="control-label">背景</text>
+          <input class="color-picker" type="color" value="{{backgroundColor}}" bindchange="onBackgroundColorChange"/>
+        </view>
+      </view>
+    </view>
+
+    <!-- 工具控制 -->
+    <view class="control-section" wx:if="{{selectedImages.length > 0}}">
+      <view class="section-header">
+        <text class="section-title">工具</text>
+      </view>
+      
+      <view class="tool-grid">
+        <view 
+          class="tool-item {{editMode && currentTool === 'text' ? 'selected' : ''}}" 
+          data-tool="text" 
+          bindtap="onToolSelect"
+        >
+          <text class="tool-icon">Aa</text>
+          <text class="tool-name">文字</text>
+        </view>
+        <view 
+          class="tool-item {{editMode && currentTool === 'arrow' ? 'selected' : ''}}" 
+          data-tool="arrow" 
+          bindtap="onToolSelect"
+        >
+          <text class="tool-icon">→</text>
+          <text class="tool-name">箭头</text>
+        </view>
+        <view 
+          class="tool-item {{editMode && currentTool === 'rect' ? 'selected' : ''}}" 
+          data-tool="rect" 
+          bindtap="onToolSelect"
+        >
+          <text class="tool-icon">▢</text>
+          <text class="tool-name">矩形</text>
+        </view>
+        <view 
+          class="tool-item {{editMode && currentTool === 'circle' ? 'selected' : ''}}" 
+          data-tool="circle" 
+          bindtap="onToolSelect"
+        >
+          <text class="tool-icon">○</text>
+          <text class="tool-name">圆形</text>
+        </view>
+      </view>
+      
+      <!-- 文字输入 -->
+      <view class="text-input-area" wx:if="{{editMode && currentTool === 'text'}}">
+        <input class="text-input" placeholder="输入文字内容" value="{{textInput}}" bindinput="onTextInput"/>
+      </view>
+    </view>
+
+    <!-- 底部操作栏 -->
+    <view class="bottom-actions">
+      <button class="action-btn secondary" bindtap="randomLayout" wx:if="{{selectedImages.length > 1}}">
+        随机
+      </button>
+      <button class="action-btn secondary" bindtap="clearImages" wx:if="{{selectedImages.length > 0}}">
+        清空
+      </button>
+      <button class="action-btn primary" bindtap="exportImage" wx:if="{{selectedImages.length > 0}}">
+        保存
+      </button>
+    </view>
+    </view>
+  </view>
+</view>
