@@ -467,6 +467,7 @@ Page({
 
   // 改变宽高比
   onAspectRatioChange (e) {
+    const that = this;
     const ratioValue = e.currentTarget?.dataset?.ratio || e.detail?.value;
 
     // 如果是从dataset获取的值(点击事件)
@@ -475,8 +476,28 @@ Page({
       if (ratio) {
         this.setData({
           aspectRatio: ratio.value
+        }, () => {
+          // setData完成后，重新计算画布尺寸
+          that.calculateCanvasSize(ratio.width, ratio.height);
+
+          // 等待画布尺寸更新完成后，重新绘制
+          setTimeout(() => {
+            if (that.data.currentLayoutTemplate) {
+              // 检查是否有图片
+              const hasImages = that.data.imageSlots && that.data.imageSlots.some(slot => !slot.isEmpty);
+
+              if (hasImages) {
+                // 有图片，重新绘制所有内容
+                console.log('切换比例后重新绘制Canvas（有图片）');
+                that.updateCanvas();
+              } else {
+                // 无图片，重新绘制占位框
+                console.log('切换比例后重新绘制占位框');
+                that.drawPlaceholders();
+              }
+            }
+          }, 50);
         });
-        this.calculateCanvasSize(ratio.width, ratio.height);
 
         wx.showToast({
           title: `已切换到 ${ratio.label}`,
@@ -484,20 +505,27 @@ Page({
           duration: 1500
         });
 
-        console.log('切换画布比例:', ratio.label);
+        console.log('切换画布比例:', ratio.label, '新尺寸将重新计算');
       }
     } else {
       // 如果是从picker获取的索引
       const ratio = this.data.aspectRatios[ratioValue];
       this.setData({
         aspectRatio: ratio.value
-      });
-      this.calculateCanvasSize(ratio.width, ratio.height);
-    }
+      }, () => {
+        that.calculateCanvasSize(ratio.width, ratio.height);
 
-    // 如果已经选择了布局,重新绘制
-    if (this.data.currentLayoutTemplate) {
-      this.updateCanvas();
+        setTimeout(() => {
+          if (that.data.currentLayoutTemplate) {
+            const hasImages = that.data.imageSlots && that.data.imageSlots.some(slot => !slot.isEmpty);
+            if (hasImages) {
+              that.updateCanvas();
+            } else {
+              that.drawPlaceholders();
+            }
+          }
+        }, 50);
+      });
     }
   },
 
@@ -532,9 +560,14 @@ Page({
       }
     }
 
+    const newCanvasWidth = Math.floor(canvasWidth);
+    const newCanvasHeight = Math.floor(canvasHeight);
+
+    console.log('计算新画布尺寸:', newCanvasWidth, 'x', newCanvasHeight);
+
     this.setData({
-      canvasWidth: Math.floor(canvasWidth),
-      canvasHeight: Math.floor(canvasHeight)
+      canvasWidth: newCanvasWidth,
+      canvasHeight: newCanvasHeight
     });
   },
 
