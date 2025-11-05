@@ -20,6 +20,24 @@
       <text class="step-desc">支持1-16张图片,共{{allLayoutTemplates.length}}种布局</text>
     </view>
 
+    <!-- 画布比例选择 -->
+    <view class="aspect-ratio-section">
+      <text class="section-label">画布比例</text>
+      <scroll-view class="aspect-ratio-scroll" scroll-x>
+        <view class="aspect-ratio-list">
+          <view
+            class="aspect-ratio-item {{aspectRatio === item.value ? 'active' : ''}}"
+            wx:for="{{aspectRatios}}"
+            wx:key="value"
+            data-ratio="{{item.value}}"
+            bindtap="onAspectRatioChange"
+          >
+            <text class="ratio-label">{{item.label}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
     <!-- 图片数量分类标签 -->
     <scroll-view class="image-count-tabs" scroll-x>
       <view class="tabs-container">
@@ -51,15 +69,35 @@
           wx:for="{{selectedImageCount === 0 ? allLayoutTemplates : layoutGroups[selectedImageCount - 1].templates}}"
           wx:key="index"
           data-index="{{index}}"
+          data-template="{{item}}"
           bindtap="onLayoutSelect"
         >
-          <view class="template-preview">
-            <text class="template-icon">{{item.icon || '▦'}}</text>
+          <!-- 可视化布局预览 -->
+          <view class="template-preview-visual">
+            <!-- 网格布局预览 -->
+            <view wx:if="{{item.type === 'grid'}}" class="grid-preview" style="grid-template-rows: repeat({{item.rows}}, 1fr); grid-template-columns: repeat({{item.cols}}, 1fr);">
+              <view
+                class="grid-cell"
+                wx:for="{{item.imageCount}}"
+                wx:for-item="cellIndex"
+                wx:key="cellIndex"
+              ></view>
+            </view>
+
+            <!-- 自定义布局预览 -->
+            <view wx:else class="custom-preview">
+              <view
+                class="custom-cell"
+                wx:for="{{item.positions}}"
+                wx:for-item="pos"
+                wx:key="index"
+                style="left: {{pos.x * 100}}%; top: {{pos.y * 100}}%; width: {{pos.width * 100}}%; height: {{pos.height * 100}}%;"
+              ></view>
+            </view>
           </view>
           <view class="template-info">
             <text class="template-name">{{item.name}}</text>
             <text class="template-count">{{item.imageCount}}张</text>
-            <text class="template-type">{{item.type === 'grid' ? '网格' : '自定义'}}</text>
           </view>
         </view>
       </view>

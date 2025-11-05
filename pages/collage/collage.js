@@ -32,12 +32,15 @@ Page({
     canvasHeight: 750,
     aspectRatio: '1:1',
     aspectRatios: [
-      { label: '1:1', value: '1:1', width: 1, height: 1 },
-      { label: '16:9', value: '16:9', width: 16, height: 9 },
-      { label: '9:16', value: '9:16', width: 9, height: 16 },
-      { label: '16:10', value: '16:10', width: 16, height: 10 },
-      { label: '4:3', value: '4:3', width: 4, height: 3 },
-      { label: '3:4', value: '3:4', width: 3, height: 4 }
+      { label: '1:1 正方形', value: '1:1', width: 1, height: 1 },
+      { label: '3:4 竖版', value: '3:4', width: 3, height: 4 },
+      { label: '4:3 横版', value: '4:3', width: 4, height: 3 },
+      { label: '9:16 手机竖屏', value: '9:16', width: 9, height: 16 },
+      { label: '16:9 手机横屏', value: '16:9', width: 16, height: 9 },
+      { label: '10:16 竖版海报', value: '10:16', width: 10, height: 16 },
+      { label: '16:10 横版海报', value: '16:10', width: 16, height: 10 },
+      { label: 'A4 纸张', value: 'A4', width: 210, height: 297 },
+      { label: 'A4 横向', value: 'A4-H', width: 297, height: 210 }
     ],
     customWidth: 1,
     customHeight: 1,
@@ -464,12 +467,38 @@ Page({
 
   // 改变宽高比
   onAspectRatioChange (e) {
-    const ratio = this.data.aspectRatios[e.detail.value];
-    this.setData({
-      aspectRatio: ratio.value
-    });
-    this.calculateCanvasSize(ratio.width, ratio.height);
-    this.updateCanvas();
+    const ratioValue = e.currentTarget?.dataset?.ratio || e.detail?.value;
+
+    // 如果是从dataset获取的值(点击事件)
+    if (typeof ratioValue === 'string') {
+      const ratio = this.data.aspectRatios.find(r => r.value === ratioValue);
+      if (ratio) {
+        this.setData({
+          aspectRatio: ratio.value
+        });
+        this.calculateCanvasSize(ratio.width, ratio.height);
+
+        wx.showToast({
+          title: `已切换到 ${ratio.label}`,
+          icon: 'success',
+          duration: 1500
+        });
+
+        console.log('切换画布比例:', ratio.label);
+      }
+    } else {
+      // 如果是从picker获取的索引
+      const ratio = this.data.aspectRatios[ratioValue];
+      this.setData({
+        aspectRatio: ratio.value
+      });
+      this.calculateCanvasSize(ratio.width, ratio.height);
+    }
+
+    // 如果已经选择了布局,重新绘制
+    if (this.data.currentLayoutTemplate) {
+      this.updateCanvas();
+    }
   },
 
   // 计算画布尺寸
