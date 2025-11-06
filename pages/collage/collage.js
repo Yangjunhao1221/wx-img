@@ -24,6 +24,7 @@ Page({
     availableLayouts: [],
     allLayoutTemplates: [],  // 所有布局模板(1-16张图片)
     layoutGroups: [],  // 按图片数量分组的布局模板
+    inlineTemplates: [], // 编辑区下方内联推荐模板（根据已选图片数量）
     selectedImageCount: 0,  // 当前选择的图片数量分类(0表示显示全部)
     direction: 'horizontal', // horizontal, vertical
 
@@ -116,6 +117,22 @@ Page({
     this.initDefaultCanvasSize();
     // 加载所有布局模板
     this.loadAllLayoutTemplates();
+
+    // 通过首页选择图片后传入
+    try {
+      const eventChannel = this.getOpenerEventChannel && this.getOpenerEventChannel();
+      if (eventChannel && eventChannel.on) {
+        eventChannel.on('selectedImages', (data) => {
+          const paths = (data && data.paths) || [];
+          console.log('收到首页传入的已选图片:', paths);
+          if (paths && paths.length) {
+            this.initWithSelectedImages(paths);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('获取事件通道失败:', err);
+    }
   },
 
   onReady: function () {
@@ -151,7 +168,6 @@ Page({
 
         // 添加到总列表
         allTemplates.push(...templatesWithCount);
-
         // 添加到分组
         groups.push({
           imageCount: i,
@@ -169,6 +185,56 @@ Page({
       layoutGroups: groups
     });
   },
+  // 使用首页传入的图片初始化
+  initWithSelectedImages (paths) {
+    const count = Math.min((paths || []).length, this.data.maxImages || 16);
+    if (count <= 0) return;
+
+    const selectedImages = paths.slice(0, count).map(p => ({ path: p }));
+
+    // 根据数量获取推荐模板，并补充 imageCount 字段
+    const templates = this.getAvailableLayouts(count) || [];
+    const templatesWithCount = templates.map(t => ({ ...t, imageCount: count }));
+    const inlineTemplates = this.attachInlinePreviews(templatesWithCount);
+    let template = null;
+    if (templatesWithCount.length > 0) {
+      try {
+        template = getRecommendedLayout(count, templatesWithCount) || templatesWithCount[0];
+      } catch (e) {
+        template = templatesWithCount[0];
+      }
+    }
+
+    // 初始化槽位并填入图片
+    const imageSlots = [];
+    for (let i = 0; i < (template ? template.imageCount : count); i++) {
+      if (i < selectedImages.length) {
+        imageSlots.push({ index: i, image: selectedImages[i], isEmpty: false });
+      } else {
+        imageSlots.push({ index: i, image: null, isEmpty: true });
+      }
+    }
+    this.setData({
+      selectedImages,
+      imageSlots,
+      currentLayoutTemplate: template,
+      inlineTemplates: inlineTemplates,
+      selectedImageCount: count,
+      workflowStep: 'editing'
+    }, () => {
+      // 预加载图片信息，准备绘制
+      this.loadImagesInfo().then(() => {
+        if (this._ctx && this._canvas) {
+          if (this.data.selectedImages.length > 0) {
+            this.updateCanvas();
+          } else {
+            this.drawPlaceholders();
+          }
+        }
+      });
+    });
+  },
+
 
   // 初始化默认画布尺寸
   initDefaultCanvasSize () {
@@ -197,6 +263,35 @@ Page({
         canvasHeight: 600
       });
     }
+  },
+
+  //
+  // 生成模版预览方块（百分比）
+  computeTemplatePreview (template) {
+    try {
+      const PRE_W = 52;
+      const PRE_H = 52;
+      const spacing = 2;
+      const imageCount = template.imageCount || (template.rows && template.cols ? Math.min(template.rows * template.cols, 16) : (template.positions ? template.positions.length : 0));
+      const positions = calculateLayout(template, PRE_W, PRE_H, spacing, imageCount) || [];
+      return positions.map(pos => ({
+        left: +(pos.x / PRE_W * 100).toFixed(1),
+        top: +(pos.y / PRE_H * 100).toFixed(1),
+        width: +(pos.width / PRE_W * 100).toFixed(1),
+        height: +(pos.height / PRE_H * 100).toFixed(1)
+      }));
+    } catch (e) {
+      console.warn('生成模版预览失败', e);
+      return [];
+    }
+  },
+
+  // 为一组模版附加预览方块
+  attachInlinePreviews (templates) {
+    return (templates || []).map(t => ({
+      ...t,
+      previewBlocks: this.computeTemplatePreview(t)
+    }));
   },
 
   // 初始化画布
@@ -339,6 +434,7 @@ Page({
           console.log('一键上传: setData完成,开始重绘Canvas');
           setTimeout(() => {
             that.updateCanvas();
+            that.updateAvailableLayouts();
             wx.hideLoading();
           }, 100);
         });
@@ -388,17 +484,36 @@ Page({
     const imageCount = this.data.selectedImages.length;
     if (imageCount > 0) {
       const layouts = this.getAvailableLayouts(imageCount);
+      const layoutsWithCount = (layouts || []).map(t => ({ ...t, imageCount }));
+      const inlineTemplates = this.attachInlinePreviews(layoutsWithCount);
       this.setData({
         availableLayouts: layouts,
+        inlineTemplates: inlineTemplates,
+        selectedImageCount: imageCount,
         selectedLayout: 0
       });
     } else {
       this.setData({
         availableLayouts: [],
+        inlineTemplates: [],
+        selectedImageCount: 0,
         selectedLayout: 0
       });
     }
   },
+  // 按指定数量刷新内联模板（用于更换布局后，立刻让面板匹配新布局的张数）
+  updateInlineTemplatesForCount (count) {
+    const layouts = this.getAvailableLayouts(count) || [];
+    const layoutsWithCount = layouts.map(t => ({ ...t, imageCount: count }));
+    const inlineTemplates = this.attachInlinePreviews(layoutsWithCount);
+    this.setData({
+      availableLayouts: layouts,
+      inlineTemplates,
+      selectedImageCount: count,
+      selectedLayout: 0
+    });
+  },
+
 
   // 加载图片信息
   loadImagesInfo () {
@@ -448,6 +563,9 @@ Page({
     this.setData({
       selectedImages: [],
       availableLayouts: [],
+      inlineTemplates: [],
+      currentLayoutTemplate: null,
+      selectedImageCount: 0,
       selectedLayout: 0
     });
     this.clearCanvas();
@@ -2299,6 +2417,7 @@ Page({
           console.log('当前imageSlots:', that.data.imageSlots);
           setTimeout(() => {
             that.updateCanvas();
+            that.updateAvailableLayouts();
           }, 100);
         });
 
@@ -2469,6 +2588,9 @@ Page({
         selectedImages: selectedImages,
         workflowStep: 'addImages'  // 进入添加图片阶段
       }, () => {
+        // 刚切换完布局：立刻按新布局的张数刷新下方内联模板
+        that.updateInlineTemplatesForCount(template.imageCount);
+
         console.log('布局选择完成,准备绘制占位框');
         console.log('ctx存在:', !!that._ctx);
         console.log('canvas存在:', !!that._canvas);
@@ -2496,6 +2618,9 @@ Page({
           } else {
             // 无图片,绘制占位框
             that.drawPlaceholders();
+            // 根据新选择的布局张数，刷新下方内联模板
+            that.updateInlineTemplatesForCount(template.imageCount);
+
           }
         }
       });
@@ -2566,6 +2691,81 @@ Page({
   },
 
   // 删除图片
+
+  // 编辑区内联模板选择
+  onInlineTemplateSelect (e) {
+    const that = this;
+    const idx = parseInt(e.currentTarget.dataset.index);
+    const list = this.data.inlineTemplates || [];
+    if (isNaN(idx) || idx < 0 || idx >= list.length) return;
+
+    const template = { ...list[idx] };
+    if (!template.imageCount) {
+      template.imageCount = this.data.selectedImages.length || 1;
+    }
+
+    // 收集已有图片
+    const existingImages = [];
+    if (this.data.imageSlots && this.data.imageSlots.length > 0) {
+      this.data.imageSlots.forEach(slot => {
+        if (!slot.isEmpty && slot.image) {
+          existingImages.push(slot.image);
+        }
+      });
+    }
+
+    // 初始化槽位并迁移
+    const imageSlots = [];
+    const selectedImages = [];
+    for (let i = 0; i < template.imageCount; i++) {
+      if (i < existingImages.length) {
+        imageSlots.push({ index: i, image: existingImages[i], isEmpty: false });
+        selectedImages.push(existingImages[i]);
+      } else {
+        imageSlots.push({ index: i, image: null, isEmpty: true });
+      }
+    }
+
+    this.setData({
+      currentLayoutTemplate: template,
+      imageSlots,
+      selectedImages,
+      workflowStep: 'editing'
+    }, () => {
+      if (!that._ctx || !that._canvas) {
+        setTimeout(() => {
+          if (that._ctx && that._canvas) {
+            // 刚切换完布局：立刻按新布局的张数刷新下方内联模板
+            that.updateInlineTemplatesForCount(template.imageCount);
+
+            //                
+            if (selectedImages.length > 0) {
+              that.updateCanvas();
+            } else {
+              that.drawPlaceholders();
+            }
+          }
+          /*
+
+                    //
+                    //                //           //       that.updateInlineTemplatesForCount(template.imageCount);
+
+          */
+
+        }, 300);
+      } else {
+        if (selectedImages.length > 0) {
+          // 切换模版后，刷新内联推荐列表
+          that.updateAvailableLayouts();
+
+          that.updateCanvas();
+        } else {
+          that.drawPlaceholders();
+        }
+      }
+    });
+  },
+
   deleteImage (e) {
     const index = parseInt(e.currentTarget.dataset.index);
 

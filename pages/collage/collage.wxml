@@ -163,6 +163,29 @@
           </scroll-view>
         </view>
 
+        <!-- 布局模版（根据已选图片数量推荐） -->
+        <view class="control-item control-item-full" wx:if="{{inlineTemplates && inlineTemplates.length}}">
+          <text class="control-label">布局模版</text>
+          <scroll-view class="template-scroll-inline" scroll-x>
+            <view class="template-list-inline">
+              <view
+                class="template-chip {{currentLayoutTemplate && currentLayoutTemplate.name === item.name ? 'active' : ''}}"
+                wx:for="{{inlineTemplates}}"
+                wx:key="index"
+                data-index="{{index}}"
+                bindtap="onInlineTemplateSelect"
+              >
+                <view class="template-preview">
+                  <block wx:for="{{item.previewBlocks}}" wx:for-item="b" wx:key="*this">
+                    <view class="template-block" style="left: {{b.left}}%; top: {{b.top}}%; width: {{b.width}}%; height: {{b.height}}%;"></view>
+                  </block>
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+
+
         <!-- 图片显示模式 -->
         <view class="control-item">
           <text class="control-label">图片显示</text>
@@ -185,7 +208,7 @@
           <slider class="control-slider" value="{{cornerRadius}}" min="0" max="50" bindchange="onCornerRadiusChange"/>
           <text class="control-value">{{cornerRadius}}</text>
         </view>
-        
+
         <!-- 背景色 -->
         <view class="control-item">
           <text class="control-label">背景</text>
@@ -199,42 +222,42 @@
       <view class="section-header">
         <text class="section-title">工具</text>
       </view>
-      
+
       <view class="tool-grid">
-        <view 
-          class="tool-item {{editMode && currentTool === 'text' ? 'selected' : ''}}" 
-          data-tool="text" 
+        <view
+          class="tool-item {{editMode && currentTool === 'text' ? 'selected' : ''}}"
+          data-tool="text"
           bindtap="onToolSelect"
         >
           <text class="tool-icon">Aa</text>
           <text class="tool-name">文字</text>
         </view>
-        <view 
-          class="tool-item {{editMode && currentTool === 'arrow' ? 'selected' : ''}}" 
-          data-tool="arrow" 
+        <view
+          class="tool-item {{editMode && currentTool === 'arrow' ? 'selected' : ''}}"
+          data-tool="arrow"
           bindtap="onToolSelect"
         >
           <text class="tool-icon">→</text>
           <text class="tool-name">箭头</text>
         </view>
-        <view 
-          class="tool-item {{editMode && currentTool === 'rect' ? 'selected' : ''}}" 
-          data-tool="rect" 
+        <view
+          class="tool-item {{editMode && currentTool === 'rect' ? 'selected' : ''}}"
+          data-tool="rect"
           bindtap="onToolSelect"
         >
           <text class="tool-icon">▢</text>
           <text class="tool-name">矩形</text>
         </view>
-        <view 
-          class="tool-item {{editMode && currentTool === 'circle' ? 'selected' : ''}}" 
-          data-tool="circle" 
+        <view
+          class="tool-item {{editMode && currentTool === 'circle' ? 'selected' : ''}}"
+          data-tool="circle"
           bindtap="onToolSelect"
         >
           <text class="tool-icon">○</text>
           <text class="tool-name">圆形</text>
         </view>
       </view>
-      
+
       <!-- 文字输入 -->
       <view class="text-input-area" wx:if="{{editMode && currentTool === 'text'}}">
         <input class="text-input" placeholder="输入文字内容" value="{{textInput}}" bindinput="onTextInput"/>

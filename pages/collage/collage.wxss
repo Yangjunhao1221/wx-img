@@ -157,6 +157,49 @@
   color: white;
 }
 
+
+/* 模版选择 - 编辑页面内联样式 */
+.template-scroll-inline {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.template-list-inline {
+  display: inline-flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.template-chip {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* 预览容器 */
+.template-preview {
+  width: 52px;
+  height: 52px;
+  border: 2px solid #e6eae7; /* 默认细边 */
+  border-radius: 6px;
+  position: relative;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+/* 选中时高亮黄色描边 */
+.template-chip.active .template-preview {
+  border-color: #FFC107;
+}
+
+/* 预览中的每个小块 */
+.template-block {
+  position: absolute;
+  background: #b7d8c7; /* 淡绿色块体，接近期望效果 */
+  border-radius: 2px;
+}
+
 /* 图片数量分类标签 */
 .image-count-tabs {
   white-space: nowrap;

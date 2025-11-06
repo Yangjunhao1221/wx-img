@@ -27,6 +27,43 @@ Page({
     console.log('首页加载');
   },
 
+  // 先选图后进入拼图
+  chooseImagesForCollage () {
+    const maxCount = 16;
+    wx.chooseMedia({
+      count: maxCount,
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      success: (res) => {
+        const paths = (res.tempFiles || []).map(f => f.tempFilePath).filter(Boolean);
+        if (!paths || paths.length === 0) {
+          wx.showToast({ title: '未选择图片', icon: 'none' });
+          return;
+        }
+        wx.navigateTo({
+          url: '/pages/collage/collage',
+          success: (navRes) => {
+            if (navRes && navRes.eventChannel) {
+              navRes.eventChannel.emit('selectedImages', { paths });
+            }
+          },
+          fail: (err) => {
+            console.error('跳转到布局拼图失败:', err);
+            wx.showToast({ title: '跳转失败', icon: 'none' });
+          }
+        });
+      },
+      fail: (err) => {
+        if (err && err.errMsg && err.errMsg.includes('cancel')) {
+          // 用户取消不提示错误
+          return;
+        }
+        console.error('选择图片失败:', err);
+        wx.showToast({ title: '选择图片失败', icon: 'none' });
+      }
+    });
+  },
+
   // 跳转到布局拼图
   goToCollage () {
     console.log('点击布局拼图,准备跳转');
@@ -68,9 +105,8 @@ Page({
     const featureId = e.currentTarget.dataset.id;
     console.log('点击功能卡片:', featureId);
 
-    // 立即执行跳转,不使用switch延迟
     if (featureId === 'collage') {
-      this.goToCollage();
+      this.chooseImagesForCollage();
     } else if (featureId === 'longimage') {
       this.goToLongImage();
     } else {

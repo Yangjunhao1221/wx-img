@@ -13,11 +13,12 @@
     <view class="section-title">✨ 选择功能</view>
     
     <view class="features-grid">
-      <navigator
+      <view
         class="feature-card"
         wx:for="{{features}}"
         wx:key="id"
-        url="{{item.url}}"
+        data-id="{{item.id}}"
+        bindtap="onFeatureClick"
         hover-class="feature-card-hover"
       >
         <view class="feature-icon">{{item.icon}}</view>
@@ -27,7 +28,7 @@
           <text class="feature-description">{{item.description}}</text>
         </view>
         <view class="feature-arrow">→</view>
-      </navigator>
+      </view>
     </view>
   </view>
 
