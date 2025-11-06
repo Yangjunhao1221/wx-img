@@ -5,23 +5,32 @@
   background: #f5f5f5;
   display: flex;
   flex-direction: column;
+  position: relative; /* 创建层叠上下文 */
 }
 
 /* 全局Canvas容器 - 始终存在 */
 .global-canvas-wrapper {
+  position: relative; /* 添加相对定位，作为工具条的定位参考 */
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  overflow: hidden;
+  overflow: visible; /* 改为visible，让工具条可以显示在外面 */
+  z-index: auto; /* 不设置z-index，避免创建新的层叠上下文 */
 }
 
 .global-canvas-wrapper .canvas {
   display: block;
+  border-radius: 8px; /* 添加圆角 */
+  overflow: hidden; /* Canvas本身裁剪内容 */
+  position: relative;
+  z-index: auto; /* 不设置z-index */
 }
 
 /* ========== 步骤1: 布局选择区域 ========== */
 .layout-selection-area {
   flex: 1;
+  position: relative;
+  z-index: auto; /* 不设置z-index */
   display: flex;
   flex-direction: column;
   background: #fff;
@@ -358,6 +367,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: auto; /* 不设置z-index */
 }
 
 /* 上半部分：图片预览区域 */
@@ -369,6 +380,7 @@
   justify-content: center;
   position: relative;
   border-bottom: 1px solid #e5e5e5;
+  z-index: auto; /* 不设置z-index */
 }
 
 .canvas-container {
@@ -391,6 +403,8 @@
   background: #fff;
   visibility: visible !important;
   opacity: 1 !important;
+  position: relative;
+  z-index: auto; /* 不设置z-index */
 }
 
 /* 布局信息栏 */
@@ -930,4 +944,51 @@
 .action-btn.secondary {
   background: #f0f0f0;
   color: #333;
+}
+
+/* ========== 图片操作工具条样式 ========== */
+.image-toolbar {
+  position: fixed; /* fixed定位，相对于视口 */
+  /* 不设置固定宽度，让内容自适应 */
+  /* cover-view 不支持 transform，在 JS 中直接计算 left 值 */
+}
+
+.toolbar-container {
+  display: flex;
+  align-items: center;
+  background: rgba(50, 50, 50, 0.95);
+  /* cover-view 不支持 backdrop-filter 和 box-shadow */
+  border-radius: 10px;
+  padding: 6px 8px;
+  white-space: nowrap; /* 防止换行 */
+}
+
+.toolbar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  min-width: 42px;
+  border-radius: 6px;
+  /* cover-view 不支持 transition 和 cursor */
+}
+
+.toolbar-item:active {
+  background: rgba(255, 255, 255, 0.15);
+  /* cover-view 不支持 transform */
+}
+
+.toolbar-icon {
+  font-size: 18px;
+  margin-bottom: 1px;
+  /* cover-view 不支持 filter */
+}
+
+.toolbar-label {
+  font-size: 10px;
+  color: white;
+  white-space: nowrap;
+  /* cover-view 不支持 text-shadow */
+  font-weight: 500;
 }

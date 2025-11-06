@@ -101,6 +101,13 @@ Page({
 
     // 图片操作相关
     selectedImageIndex: -1, // 当前选中的图片索引
+
+    // 图片工具条
+    showImageToolbar: false, // 是否显示图片工具条
+    toolbarImageIndex: -1, // 工具条对应的图片索引
+    toolbarPosition: { x: 0, y: 0 }, // 工具条位置
+    imageScale: {}, // 每张图片的缩放比例 {index: scale}
+    imageRotation: {}, // 每张图片的旋转角度 {index: angle}
   },
 
   onLoad: function () {
@@ -266,6 +273,11 @@ Page({
   selectImages () {
     const that = this;
 
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     // 检查是否已选择布局
     if (!that.data.currentLayoutTemplate) {
       wx.showToast({
@@ -428,6 +440,11 @@ Page({
 
   // 清除所有图片
   clearImages () {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     this.setData({
       selectedImages: [],
       availableLayouts: [],
@@ -446,6 +463,11 @@ Page({
 
   // 随机排列图片
   randomLayout () {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     const selectedImages = [...this.data.selectedImages];
     for (let i = selectedImages.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -657,6 +679,11 @@ Page({
 
   // 更新间距
   onSpacingChange (e) {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     this.setData({
       spacing: parseInt(e.detail.value)
     });
@@ -665,6 +692,11 @@ Page({
 
   // 更新圆角
   onCornerRadiusChange (e) {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     this.setData({
       cornerRadius: parseInt(e.detail.value)
     });
@@ -673,6 +705,11 @@ Page({
 
   // 更新背景颜色
   onBackgroundColorChange (e) {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     this.setData({
       backgroundColor: e.detail.value
     });
@@ -788,7 +825,7 @@ Page({
       } else {
         // 绘制图片
         console.log(`绘制槽位${index}的图片:`, slot.image.path);
-        return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height);
+        return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height, index);
       }
     });
 
@@ -1059,11 +1096,11 @@ Page({
   },
 
   // 加载并绘制图片
-  loadAndDrawImage (imagePath, x, y, width, height) {
+  loadAndDrawImage (imagePath, x, y, width, height, imageIndex) {
     const that = this;
     const ctx = this._ctx;
     const canvas = this._canvas;
-    const { cornerRadius } = this.data;
+    const { cornerRadius, imageScale, imageRotation } = this.data;
 
     console.log('开始加载图片:', imagePath);
 
@@ -1084,9 +1121,29 @@ Page({
           // 保存当前状态
           ctx.save();
 
-          // 创建圆角裁剪路径
+          // 获取该图片的缩放和旋转参数
+          const scale = (imageIndex !== undefined && imageScale[imageIndex]) ? imageScale[imageIndex] : 1.0;
+          const rotation = (imageIndex !== undefined && imageRotation[imageIndex]) ? imageRotation[imageIndex] : 0;
+
+          // 先创建圆角裁剪路径（在变换之前），确保图片不会超出容器
           that.roundRect(ctx, x, y, width, height, cornerRadius);
           ctx.clip();
+
+          // 计算中心点
+          const centerX = x + width / 2;
+          const centerY = y + height / 2;
+
+          // 应用旋转和缩放变换（在裁剪之后）
+          if (rotation !== 0 || scale !== 1.0) {
+            ctx.translate(centerX, centerY);
+            if (rotation !== 0) {
+              ctx.rotate(rotation * Math.PI / 180);
+            }
+            if (scale !== 1.0) {
+              ctx.scale(scale, scale);
+            }
+            ctx.translate(-centerX, -centerY);
+          }
 
           // 计算图片在容器中的显示尺寸和位置
           const imgRatio = img.width / img.height;
@@ -1133,7 +1190,7 @@ Page({
           // 恢复状态
           ctx.restore();
 
-          console.log('图片绘制完成, 模式:', fitMode);
+          console.log('图片绘制完成, 模式:', fitMode, '缩放:', scale, '旋转:', rotation);
           resolve();
         } catch (error) {
           console.error('绘制图片失败:', error);
@@ -1451,6 +1508,10 @@ Page({
               // 创建图片对象
               const img = canvas.createImage();
               img.onload = () => {
+                // 获取该图片的缩放和旋转参数
+                const scale = that.data.imageScale[index] || 1.0;
+                const rotation = that.data.imageRotation[index] || 0;
+
                 // 计算图片绘制尺寸，保持宽高比
                 const imgAspect = img.width / img.height;
                 const cellAspect = pos.width / pos.height;
@@ -1471,21 +1532,36 @@ Page({
                 drawX = pos.x + (pos.width - drawWidth) / 2;
                 drawY = pos.y + (pos.height - drawHeight) / 2;
 
-                // 绘制圆角矩形背景
+                // 保存状态
+                ctx.save();
+
+                // 先绘制圆角矩形裁剪路径（在变换之前），确保图片不会超出容器
                 if (that.data.cornerRadius > 0) {
                   const radius = that.data.cornerRadius;
-                  ctx.save();
                   ctx.beginPath();
                   that.roundRect(ctx, pos.x, pos.y, pos.width, pos.height, radius);
                   ctx.clip();
                 }
 
+                // 应用旋转和缩放变换（在裁剪之后）
+                if (rotation !== 0 || scale !== 1.0) {
+                  const centerX = pos.x + pos.width / 2;
+                  const centerY = pos.y + pos.height / 2;
+                  ctx.translate(centerX, centerY);
+                  if (rotation !== 0) {
+                    ctx.rotate(rotation * Math.PI / 180);
+                  }
+                  if (scale !== 1.0) {
+                    ctx.scale(scale, scale);
+                  }
+                  ctx.translate(-centerX, -centerY);
+                }
+
                 // 绘制图片
                 ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
-                if (that.data.cornerRadius > 0) {
-                  ctx.restore();
-                }
+                // 恢复状态
+                ctx.restore();
 
                 resolveImg();
               };
@@ -1653,19 +1729,13 @@ Page({
     const x = e.touches[0].x;
     const y = e.touches[0].y;
 
-    // 新流程: 检查是否点击了占位框
-    if (this.data.workflowStep === 'addImages' || this.data.workflowStep === 'editing') {
-      const slotIndex = this.getHitSlotIndex(x, y);
-      if (slotIndex !== -1) {
-        console.log('点击了槽位:', slotIndex);
-        // 触发槽位点击事件
-        this.onSlotTap({ currentTarget: { dataset: { index: slotIndex } } });
-        return;
-      }
-    }
-
     // 编辑工具模式
     if (this.data.editMode && this.data.currentTool) {
+      // 关闭工具条
+      if (this.data.showImageToolbar) {
+        this.hideImageToolbar();
+      }
+
       this.setData({
         isDrawing: true,
         startPoint: { x, y }
@@ -1677,7 +1747,49 @@ Page({
       return;
     }
 
-    // 拖拽模式 - 检查是否点击了图片
+    // 检查是否点击了已有图片（非空槽位）
+    if (this.data.workflowStep === 'addImages' || this.data.workflowStep === 'editing') {
+      const hitIndex = this.getHitImageIndex(x, y);
+
+      if (hitIndex !== -1) {
+        // 检查该槽位是否有图片
+        const slot = this.data.imageSlots[hitIndex];
+
+        if (slot && !slot.isEmpty) {
+          // 如果点击的是同一张图片，关闭工具条
+          if (this.data.showImageToolbar && this.data.toolbarImageIndex === hitIndex) {
+            this.hideImageToolbar();
+            return;
+          }
+
+          // 点击了有图片的槽位，显示工具条
+          this.showImageToolbar(hitIndex, x, y);
+          return;
+        }
+      }
+
+      // 检查是否点击了空槽位
+      const slotIndex = this.getHitSlotIndex(x, y);
+      if (slotIndex !== -1) {
+        const slot = this.data.imageSlots[slotIndex];
+        if (slot && slot.isEmpty) {
+          // 关闭工具条
+          if (this.data.showImageToolbar) {
+            this.hideImageToolbar();
+          }
+          // 触发槽位点击事件
+          this.onSlotTap({ currentTarget: { dataset: { index: slotIndex } } });
+          return;
+        }
+      }
+
+      // 点击了空白区域，关闭工具条
+      if (this.data.showImageToolbar) {
+        this.hideImageToolbar();
+      }
+    }
+
+    // 拖拽模式 - 检查是否点击了图片（保留原有拖拽功能）
     const hitIndex = this.getHitImageIndex(x, y);
     if (hitIndex !== -1) {
       this.setData({
@@ -1902,6 +2014,7 @@ Page({
   getHitImageIndex (x, y) {
     for (let i = 0; i < this.data.imagePositions.length; i++) {
       const pos = this.data.imagePositions[i];
+
       if (x >= pos.x && x <= pos.x + pos.width &&
         y >= pos.y && y <= pos.y + pos.height) {
         return i;
@@ -2113,6 +2226,11 @@ Page({
 
   // 点击槽位添加图片
   onSlotTap (e) {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     const index = parseInt(e.currentTarget.dataset.index);
     const slot = this.data.imageSlots[index];
 
@@ -2194,6 +2312,11 @@ Page({
 
   // 移除槽位中的图片
   onSlotRemove (e) {
+    // 关闭工具条
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+
     const index = parseInt(e.currentTarget.dataset.index);
     const slot = this.data.imageSlots[index];
 
@@ -2454,6 +2577,320 @@ Page({
           this.removeImage({ currentTarget: { dataset: { index } } });
           this.setData({
             selectedImageIndex: -1
+          });
+        }
+      }
+    });
+  },
+
+  // ========== 图片工具条相关方法 ==========
+
+  // 显示图片工具条
+  showImageToolbar (imageIndex, touchX, touchY) {
+    const that = this;
+    const { imagePositions } = this.data;
+
+    if (!imagePositions || !imagePositions[imageIndex]) {
+      return;
+    }
+
+    const pos = imagePositions[imageIndex];
+
+    // 先显示工具条（位置暂时设为 0,0），然后获取实际尺寸再调整位置
+    this.setData({
+      showImageToolbar: true,
+      toolbarImageIndex: imageIndex,
+      toolbarPosition: { x: 0, y: 0 }
+    }, () => {
+      // 工具条显示后，获取其实际尺寸
+      const query = wx.createSelectorQuery().in(that);
+      query.select('#canvas-wrapper').boundingClientRect();
+      query.select('.image-toolbar').boundingClientRect();
+      query.selectViewport().scrollOffset();
+      query.exec((res) => {
+        if (!res || !res[0] || !res[1]) {
+          return;
+        }
+
+        const canvasRect = res[0];
+        const toolbarRect = res[1];
+
+        // 使用工具条的实际宽度和高度
+        const toolbarWidth = toolbarRect.width || 280;
+        const toolbarHeight = toolbarRect.height || 50;
+
+        // 计算图片在canvas中的中心位置
+        const imageCenterX = pos.x + pos.width / 2;
+
+        // 图片在视口中的位置
+        const imageTopInViewport = canvasRect.top + pos.y;
+        const imageBottomInViewport = canvasRect.top + pos.y + pos.height;
+
+        // 默认显示在图片上方
+        let toolbarY = imageTopInViewport - toolbarHeight - 10;
+
+        // 获取窗口信息
+        const systemInfo = wx.getSystemInfoSync();
+        const windowWidth = systemInfo.windowWidth;
+        const windowHeight = systemInfo.windowHeight;
+
+        // 计算工具条的 left 值（不使用 transform，直接计算左边距）
+        // 工具条应该水平居中在图片上
+        let toolbarLeft = canvasRect.left + imageCenterX - toolbarWidth / 2;
+
+        // 左右边界检查 - 确保工具条不超出屏幕
+        const margin = 10; // 边距
+
+        if (toolbarLeft < margin) {
+          toolbarLeft = margin;
+        }
+
+        if (toolbarLeft + toolbarWidth > windowWidth - margin) {
+          toolbarLeft = windowWidth - toolbarWidth - margin;
+        }
+
+        // 上下边界检查
+        if (toolbarY < margin) {
+          // 上方空间不足，显示在图片下方
+          toolbarY = imageBottomInViewport + margin;
+
+          // 如果下方也超出屏幕，则显示在图片中央
+          if (toolbarY + toolbarHeight > windowHeight - margin) {
+            toolbarY = imageTopInViewport + (pos.height - toolbarHeight) / 2;
+          }
+        }
+
+        // 最终边界检查 - 确保工具条完全在屏幕内
+        if (toolbarY < margin) {
+          toolbarY = margin;
+        }
+        if (toolbarY + toolbarHeight > windowHeight - margin) {
+          toolbarY = windowHeight - toolbarHeight - margin;
+        }
+
+        // 更新工具条位置
+        that.setData({
+          toolbarPosition: { x: toolbarLeft, y: toolbarY }
+        });
+      });
+    });
+  },
+
+  // 隐藏图片工具条
+  hideImageToolbar () {
+    this.setData({
+      showImageToolbar: false,
+      toolbarImageIndex: -1
+    });
+  },
+
+  // 阻止事件冒泡
+  stopPropagation () {
+    // 空方法，仅用于阻止事件冒泡
+  },
+
+  // 页面点击事件 - 关闭工具条
+  onPageTap () {
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+  },
+
+  // 页面滚动事件 - 关闭工具条
+  onPageScroll () {
+    if (this.data.showImageToolbar) {
+      this.hideImageToolbar();
+    }
+  },
+
+  // 工具条 - 换一张
+  onToolbarReplace () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('换一张图片，索引:', index);
+    this.hideImageToolbar();
+
+    // 选择新图片
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['image'],
+      sizeType: ['original', 'compressed'],
+      sourceType: ['album', 'camera'],
+      success: (res) => {
+        if (res.tempFiles && res.tempFiles.length > 0) {
+          const newImagePath = res.tempFiles[0].tempFilePath;
+
+          // 获取图片信息
+          wx.getImageInfo({
+            src: newImagePath,
+            success: (imgInfo) => {
+              const imageSlots = this.data.imageSlots;
+              const selectedImages = this.data.selectedImages;
+
+              // 更新槽位
+              imageSlots[index] = {
+                isEmpty: false,
+                image: {
+                  path: newImagePath,
+                  width: imgInfo.width,
+                  height: imgInfo.height
+                }
+              };
+
+              // 更新选中图片列表
+              selectedImages[index] = {
+                path: newImagePath,
+                width: imgInfo.width,
+                height: imgInfo.height
+              };
+
+              this.setData({
+                imageSlots: imageSlots,
+                selectedImages: selectedImages
+              });
+
+              // 重新绘制画布
+              this.updateCanvas();
+
+              wx.showToast({
+                title: '图片已替换',
+                icon: 'success'
+              });
+            }
+          });
+        }
+      }
+    });
+  },
+
+  // 工具条 - 旋转
+  onToolbarRotate () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('旋转图片，索引:', index);
+
+    // 获取当前旋转角度
+    const imageRotation = this.data.imageRotation;
+    const currentRotation = imageRotation[index] || 0;
+    const newRotation = (currentRotation + 90) % 360;
+
+    // 更新旋转角度
+    imageRotation[index] = newRotation;
+
+    this.setData({
+      imageRotation: imageRotation
+    });
+
+    // 重新绘制画布
+    this.updateCanvas();
+
+    wx.showToast({
+      title: `旋转${newRotation}°`,
+      icon: 'none'
+    });
+  },
+
+  // 工具条 - 放大
+  onToolbarZoomIn () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('放大图片，索引:', index);
+
+    // 获取当前缩放比例
+    const imageScale = this.data.imageScale;
+    const currentScale = imageScale[index] || 1.0;
+    const newScale = Math.min(currentScale + 0.1, 2.0); // 最大2倍
+
+    // 更新缩放比例
+    imageScale[index] = newScale;
+
+    this.setData({
+      imageScale: imageScale
+    });
+
+    // 重新绘制画布
+    this.updateCanvas();
+
+    wx.showToast({
+      title: `${Math.round(newScale * 100)}%`,
+      icon: 'none'
+    });
+  },
+
+  // 工具条 - 缩小
+  onToolbarZoomOut () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('缩小图片，索引:', index);
+
+    // 获取当前缩放比例
+    const imageScale = this.data.imageScale;
+    const currentScale = imageScale[index] || 1.0;
+    const newScale = Math.max(currentScale - 0.1, 0.5); // 最小0.5倍
+
+    // 更新缩放比例
+    imageScale[index] = newScale;
+
+    this.setData({
+      imageScale: imageScale
+    });
+
+    // 重新绘制画布
+    this.updateCanvas();
+
+    wx.showToast({
+      title: `${Math.round(newScale * 100)}%`,
+      icon: 'none'
+    });
+  },
+
+  // 工具条 - 删除
+  onToolbarDelete () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('删除图片，索引:', index);
+    this.hideImageToolbar();
+
+    wx.showModal({
+      title: '确认删除',
+      content: '确定要删除这张图片吗？',
+      success: (res) => {
+        if (res.confirm) {
+          // 清空该槽位
+          const imageSlots = this.data.imageSlots;
+          const selectedImages = this.data.selectedImages;
+
+          imageSlots[index] = {
+            isEmpty: true,
+            image: null
+          };
+
+          selectedImages[index] = null;
+
+          // 清除该图片的缩放和旋转设置
+          const imageScale = this.data.imageScale;
+          const imageRotation = this.data.imageRotation;
+          delete imageScale[index];
+          delete imageRotation[index];
+
+          this.setData({
+            imageSlots: imageSlots,
+            selectedImages: selectedImages,
+            imageScale: imageScale,
+            imageRotation: imageRotation
+          });
+
+          // 重新绘制画布
+          this.updateCanvas();
+
+          wx.showToast({
+            title: '已删除',
+            icon: 'success'
           });
         }
       }

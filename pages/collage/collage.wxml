@@ -1,7 +1,7 @@
 <!--pages/collage/collage.wxml-->
 <view class="container">
   <!-- Canvas元素 - 始终存在,根据步骤改变样式 -->
-  <view class="global-canvas-wrapper" style="{{workflowStep === 'selectLayout' ? 'position: fixed; left: -9999px; top: -9999px; width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px;' : 'width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px; margin: 20rpx auto;'}}">
+  <view class="global-canvas-wrapper" id="canvas-wrapper" style="{{workflowStep === 'selectLayout' ? 'position: fixed; left: -9999px; top: -9999px; width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px;' : 'width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px; margin: 20rpx auto;'}}" catchtap="stopPropagation">
     <canvas
       type="2d"
       id="canvas"
@@ -87,7 +87,7 @@
   </view>
 
   <!-- 步骤2/3: 添加图片 / 编辑 -->
-  <view class="editing-area" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}">
+  <view class="editing-area" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
     <!-- 上半部分：Canvas预览区域 -->
     <view class="image-area">
       <!-- 布局信息提示 -->
@@ -103,7 +103,7 @@
     </view>
 
     <!-- 下半部分：控制区域 -->
-    <view class="control-area">
+    <view class="control-area" bindscroll="onPageScroll">
       <!-- 图片槽位管理 -->
       <view class="control-section">
         <view class="section-header">
@@ -112,7 +112,7 @@
         </view>
 
         <!-- 图片槽位列表 -->
-        <scroll-view class="image-slots-scroll" scroll-x>
+        <scroll-view class="image-slots-scroll" scroll-x bindscroll="onPageScroll">
           <view class="image-slots">
             <view
               class="slot-item {{item.isEmpty ? 'empty' : 'filled'}}"
@@ -148,7 +148,7 @@
         <!-- 画布比例 -->
         <view class="control-item control-item-full">
           <text class="control-label">画布比例</text>
-          <scroll-view class="aspect-ratio-scroll-inline" scroll-x>
+          <scroll-view class="aspect-ratio-scroll-inline" scroll-x bindscroll="onPageScroll">
             <view class="aspect-ratio-list-inline">
               <view
                 class="aspect-ratio-chip {{aspectRatio === item.value ? 'active' : ''}}"
@@ -255,4 +255,30 @@
     </view>
     </view>
   </view>
+
+  <!-- 图片操作工具条 - 使用 cover-view 覆盖在 Canvas 上 -->
+  <cover-view class="image-toolbar" wx:if="{{showImageToolbar}}" style="left: {{toolbarPosition.x}}px; top: {{toolbarPosition.y}}px;">
+    <cover-view class="toolbar-container">
+      <cover-view class="toolbar-item" bindtap="onToolbarReplace">
+        <cover-view class="toolbar-icon">🖼️</cover-view>
+        <cover-view class="toolbar-label">换一张</cover-view>
+      </cover-view>
+      <cover-view class="toolbar-item" bindtap="onToolbarRotate">
+        <cover-view class="toolbar-icon">🔄</cover-view>
+        <cover-view class="toolbar-label">旋转</cover-view>
+      </cover-view>
+      <cover-view class="toolbar-item" bindtap="onToolbarZoomIn">
+        <cover-view class="toolbar-icon">➕</cover-view>
+        <cover-view class="toolbar-label">放大</cover-view>
+      </cover-view>
+      <cover-view class="toolbar-item" bindtap="onToolbarZoomOut">
+        <cover-view class="toolbar-icon">➖</cover-view>
+        <cover-view class="toolbar-label">缩小</cover-view>
+      </cover-view>
+      <cover-view class="toolbar-item" bindtap="onToolbarDelete">
+        <cover-view class="toolbar-icon">🗑️</cover-view>
+        <cover-view class="toolbar-label">删除</cover-view>
+      </cover-view>
+    </cover-view>
+  </cover-view>
 </view>
