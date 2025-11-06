@@ -40,8 +40,14 @@ Page({
           wx.showToast({ title: '未选择图片', icon: 'none' });
           return;
         }
+
+        // 真机兼容：先存到全局，再通过URL参数标记 + eventChannel双保险
+        const app = getApp();
+        app.globalData = app.globalData || {};
+        app.globalData.pendingCollageImages = paths;
+
         wx.navigateTo({
-          url: '/pages/collage/collage',
+          url: '/pages/collage/collage?fromIndex=1',
           success: (navRes) => {
             if (navRes && navRes.eventChannel) {
               navRes.eventChannel.emit('selectedImages', { paths });

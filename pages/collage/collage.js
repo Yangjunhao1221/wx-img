@@ -1,6 +1,8 @@
 // pages/collage/collage.js
 const { getLayoutTemplates } = require('../../utils/layoutTemplates.js');
-const { calculateLayout, getRecommendedLayout, validateLayout } = require('../../utils/layoutCalculator.js');
+const {
+  calculateLayout, getRecommendedLayout, validateLayout,
+} = require('../../utils/layoutCalculator.js');
 
 Page({
   // Canvas对象存储为组件属性,不放在data中(真机上canvas/ctx是只读的,不能存入data)
@@ -33,15 +35,42 @@ Page({
     canvasHeight: 750,
     aspectRatio: '1:1',
     aspectRatios: [
-      { label: '1:1 正方形', value: '1:1', width: 1, height: 1 },
-      { label: '3:4 竖版', value: '3:4', width: 3, height: 4 },
-      { label: '4:3 横版', value: '4:3', width: 4, height: 3 },
-      { label: '9:16 手机竖屏', value: '9:16', width: 9, height: 16 },
-      { label: '16:9 手机横屏', value: '16:9', width: 16, height: 9 },
-      { label: '10:16 竖版海报', value: '10:16', width: 10, height: 16 },
-      { label: '16:10 横版海报', value: '16:10', width: 16, height: 10 },
-      { label: 'A4 纸张', value: 'A4', width: 210, height: 297 },
-      { label: 'A4 横向', value: 'A4-H', width: 297, height: 210 }
+      {
+        label: '1:1 正方形', value: '1:1', width: 1,
+        height: 1,
+      },
+      {
+        label: '3:4 竖版', value: '3:4', width: 3,
+        height: 4,
+      },
+      {
+        label: '4:3 横版', value: '4:3', width: 4,
+        height: 3,
+      },
+      {
+        label: '9:16 手机竖屏', value: '9:16', width: 9,
+        height: 16,
+      },
+      {
+        label: '16:9 手机横屏', value: '16:9', width: 16,
+        height: 9,
+      },
+      {
+        label: '10:16 竖版海报', value: '10:16', width: 10,
+        height: 16,
+      },
+      {
+        label: '16:10 横版海报', value: '16:10', width: 16,
+        height: 10,
+      },
+      {
+        label: 'A4 纸张', value: 'A4', width: 210,
+        height: 297,
+      },
+      {
+        label: 'A4 横向', value: 'A4-H', width: 297,
+        height: 210,
+      },
     ],
     customWidth: 1,
     customHeight: 1,
@@ -69,7 +98,7 @@ Page({
     exportFormats: [
       { label: '高清JPG', value: 'high' },
       { label: '标准JPG', value: 'standard' },
-      { label: '无损PNG', value: 'png' }
+      { label: '无损PNG', value: 'png' },
     ],
 
     // 编辑工具
@@ -111,20 +140,36 @@ Page({
     imageRotation: {}, // 每张图片的旋转角度 {index: angle}
   },
 
-  onLoad: function () {
-    console.log('布局拼图页面onLoad');
+  onLoad: function (options) {
+    console.log('布局拼图页面onLoad, options:', options);
     // 初始化默认画布尺寸
     this.initDefaultCanvasSize();
     // 加载所有布局模板
     this.loadAllLayoutTemplates();
 
-    // 通过首页选择图片后传入
+    // 真机兼容方案：优先从全局数据读取，兜底用eventChannel
+    const fromIndex = options && options.fromIndex === '1';
+    if (fromIndex) {
+      const app = getApp();
+      const paths = (app.globalData && app.globalData.pendingCollageImages) || [];
+      if (paths && paths.length > 0) {
+        console.log('从全局数据读取已选图片:', paths);
+        // 清空全局数据，避免重复使用
+        if (app.globalData) {
+          app.globalData.pendingCollageImages = null;
+        }
+        this.initWithSelectedImages(paths);
+        return; // 已处理，不再监听eventChannel
+      }
+    }
+
+    // 兜底：通过eventChannel接收（开发者工具可能走这里）
     try {
       const eventChannel = this.getOpenerEventChannel && this.getOpenerEventChannel();
       if (eventChannel && eventChannel.on) {
         eventChannel.on('selectedImages', (data) => {
           const paths = (data && data.paths) || [];
-          console.log('收到首页传入的已选图片:', paths);
+          console.log('收到首页传入的已选图片(eventChannel):', paths);
           if (paths && paths.length) {
             this.initWithSelectedImages(paths);
           }
@@ -163,7 +208,7 @@ Page({
       if (templates && templates.length > 0) {
         const templatesWithCount = templates.map(template => ({
           ...template,
-          imageCount: i  // 添加图片数量标识
+          imageCount: i,  // 添加图片数量标识
         }));
 
         // 添加到总列表
@@ -173,7 +218,7 @@ Page({
           imageCount: i,
           label: `${i}张`,
           templates: templatesWithCount,
-          count: templatesWithCount.length
+          count: templatesWithCount.length,
         });
       }
     }
@@ -182,7 +227,7 @@ Page({
 
     this.setData({
       allLayoutTemplates: allTemplates,
-      layoutGroups: groups
+      layoutGroups: groups,
     });
   },
   // 使用首页传入的图片初始化
@@ -190,11 +235,19 @@ Page({
     const count = Math.min((paths || []).length, this.data.maxImages || 16);
     if (count <= 0) return;
 
+    // 显示加载提示
+    wx.showLoading({
+      title: '加载中...',
+      mask: true
+    });
+
     const selectedImages = paths.slice(0, count).map(p => ({ path: p }));
 
     // 根据数量获取推荐模板，并补充 imageCount 字段
     const templates = this.getAvailableLayouts(count) || [];
-    const templatesWithCount = templates.map(t => ({ ...t, imageCount: count }));
+    const templatesWithCount = templates.map(t => ({
+      ...t, imageCount: count,
+    }));
     const inlineTemplates = this.attachInlinePreviews(templatesWithCount);
     let template = null;
     if (templatesWithCount.length > 0) {
@@ -209,30 +262,62 @@ Page({
     const imageSlots = [];
     for (let i = 0; i < (template ? template.imageCount : count); i++) {
       if (i < selectedImages.length) {
-        imageSlots.push({ index: i, image: selectedImages[i], isEmpty: false });
+        imageSlots.push({
+          index: i, image: selectedImages[i],
+          isEmpty: false,
+        });
       } else {
-        imageSlots.push({ index: i, image: null, isEmpty: true });
+        imageSlots.push({
+          index: i, image: null, isEmpty: true,
+        });
       }
     }
+
     this.setData({
       selectedImages,
       imageSlots,
       currentLayoutTemplate: template,
       inlineTemplates: inlineTemplates,
       selectedImageCount: count,
-      workflowStep: 'editing'
+      workflowStep: 'editing',
     }, () => {
-      // 预加载图片信息，准备绘制
+      // 预加载图片信息
       this.loadImagesInfo().then(() => {
+        // 标记需要绘制，等待Canvas初始化完成
+        this._pendingDraw = true;
+        // 如果Canvas已就绪，立即绘制
         if (this._ctx && this._canvas) {
-          if (this.data.selectedImages.length > 0) {
-            this.updateCanvas();
-          } else {
-            this.drawPlaceholders();
-          }
+          this.drawCanvasContent();
         }
+      }).catch((err) => {
+        console.error('加载图片信息失败:', err);
+        wx.hideLoading();
+        wx.showToast({
+          title: '图片加载失败',
+          icon: 'none'
+        });
       });
     });
+  },
+
+  // 绘制画布内容（统一入口）
+  drawCanvasContent () {
+    if (!this._ctx || !this._canvas) {
+      console.warn('Canvas未初始化，无法绘制');
+      return;
+    }
+
+    if (this.data.selectedImages.length > 0) {
+      this.updateCanvas();
+    } else {
+      this.drawPlaceholders();
+    }
+
+    // 清除待绘制标记
+    this._pendingDraw = false;
+
+    // 隐藏加载提示
+    wx.hideLoading();
   },
 
 
@@ -253,14 +338,14 @@ Page({
 
       this.setData({
         canvasWidth: defaultSize,
-        canvasHeight: defaultSize
+        canvasHeight: defaultSize,
       });
     } catch (error) {
       console.error('初始化画布尺寸失败:', error);
       // 使用默认值
       this.setData({
         canvasWidth: 600,
-        canvasHeight: 600
+        canvasHeight: 600,
       });
     }
   },
@@ -278,7 +363,7 @@ Page({
         left: +(pos.x / PRE_W * 100).toFixed(1),
         top: +(pos.y / PRE_H * 100).toFixed(1),
         width: +(pos.width / PRE_W * 100).toFixed(1),
-        height: +(pos.height / PRE_H * 100).toFixed(1)
+        height: +(pos.height / PRE_H * 100).toFixed(1),
       }));
     } catch (e) {
       console.warn('生成模版预览失败', e);
@@ -290,7 +375,7 @@ Page({
   attachInlinePreviews (templates) {
     return (templates || []).map(t => ({
       ...t,
-      previewBlocks: this.computeTemplatePreview(t)
+      previewBlocks: this.computeTemplatePreview(t),
     }));
   },
 
@@ -338,7 +423,7 @@ Page({
           canvasHeight: canvasNode.height,
           displayWidth: that.data.canvasWidth,
           displayHeight: that.data.canvasHeight,
-          dpr: dpr
+          dpr: dpr,
         });
 
         // 保存canvas和ctx到组件属性(不能存入data,真机上会报错)
@@ -346,20 +431,17 @@ Page({
         that._ctx = ctx;
         console.log('Canvas对象已保存到组件属性');
 
-        // 绘制初始背景和测试图形
+        // 绘制初始背景
         ctx.fillStyle = that.data.backgroundColor;
         ctx.fillRect(0, 0, that.data.canvasWidth, that.data.canvasHeight);
 
-        // 绘制一个测试矩形,确保Canvas可见
-        ctx.fillStyle = '#007AFF';
-        ctx.fillRect(20, 20, 100, 100);
+        console.log('Canvas初始化完成');
 
-        // 绘制测试文字
-        ctx.fillStyle = '#000000';
-        ctx.font = '20px sans-serif';
-        ctx.fillText('Canvas已就绪', 20, 150);
-
-        console.log('Canvas初始化完成,已绘制测试图形');
+        // 如果有待绘制的内容（从首页带入图片的情况），立即绘制
+        if (that._pendingDraw) {
+          console.log('检测到待绘制内容，开始绘制');
+          that.drawCanvasContent();
+        }
       });
   },
 
@@ -377,7 +459,7 @@ Page({
     if (!that.data.currentLayoutTemplate) {
       wx.showToast({
         title: '请先选择布局模板',
-        icon: 'none'
+        icon: 'none',
       });
       return;
     }
@@ -390,7 +472,7 @@ Page({
     if (remainingCount <= 0) {
       wx.showToast({
         title: `当前布局最多${maxCount}张图片`,
-        icon: 'none'
+        icon: 'none',
       });
       return;
     }
@@ -401,12 +483,12 @@ Page({
       sourceType: ['album', 'camera'],
       success: function (res) {
         wx.showLoading({
-          title: '处理图片中...'
+          title: '处理图片中...',
         });
 
         const tempFiles = res.tempFiles;
         const newImages = tempFiles.map(file => ({
-          path: file.tempFilePath
+          path: file.tempFilePath,
         }));
 
         // 填充到空槽位
@@ -428,7 +510,7 @@ Page({
         that.setData({
           imageSlots: updatedSlots,
           selectedImages: updatedImages,
-          workflowStep: 'editing'
+          workflowStep: 'editing',
         }, () => {
           // setData完成后重新绘制Canvas
           console.log('一键上传: setData完成,开始重绘Canvas');
@@ -441,15 +523,15 @@ Page({
 
         wx.showToast({
           title: `已添加${addedCount}张图片`,
-          icon: 'success'
+          icon: 'success',
         });
       },
       fail: function () {
         wx.showToast({
           title: '选择图片失败',
-          icon: 'error'
+          icon: 'error',
         });
-      }
+      },
     });
   },
 
@@ -475,7 +557,7 @@ Page({
       icon: '▦',
       type: 'grid',
       rows: defaultRows,
-      cols: defaultCols
+      cols: defaultCols,
     }];
   },
 
@@ -484,33 +566,37 @@ Page({
     const imageCount = this.data.selectedImages.length;
     if (imageCount > 0) {
       const layouts = this.getAvailableLayouts(imageCount);
-      const layoutsWithCount = (layouts || []).map(t => ({ ...t, imageCount }));
+      const layoutsWithCount = (layouts || []).map(t => ({
+        ...t, imageCount,
+      }));
       const inlineTemplates = this.attachInlinePreviews(layoutsWithCount);
       this.setData({
         availableLayouts: layouts,
         inlineTemplates: inlineTemplates,
         selectedImageCount: imageCount,
-        selectedLayout: 0
+        selectedLayout: 0,
       });
     } else {
       this.setData({
         availableLayouts: [],
         inlineTemplates: [],
         selectedImageCount: 0,
-        selectedLayout: 0
+        selectedLayout: 0,
       });
     }
   },
   // 按指定数量刷新内联模板（用于更换布局后，立刻让面板匹配新布局的张数）
   updateInlineTemplatesForCount (count) {
     const layouts = this.getAvailableLayouts(count) || [];
-    const layoutsWithCount = layouts.map(t => ({ ...t, imageCount: count }));
+    const layoutsWithCount = layouts.map(t => ({
+      ...t, imageCount: count,
+    }));
     const inlineTemplates = this.attachInlinePreviews(layoutsWithCount);
     this.setData({
       availableLayouts: layouts,
       inlineTemplates,
       selectedImageCount: count,
-      selectedLayout: 0
+      selectedLayout: 0,
     });
   },
 
@@ -527,13 +613,13 @@ Page({
             updatedImages[index].width = res.width;
             updatedImages[index].height = res.height;
             that.setData({
-              selectedImages: updatedImages
+              selectedImages: updatedImages,
             });
             resolve();
           },
           fail: () => {
             resolve(); // 即使失败也继续
-          }
+          },
         });
       });
     });
@@ -547,7 +633,7 @@ Page({
     const selectedImages = this.data.selectedImages;
     selectedImages.splice(index, 1);
     this.setData({
-      selectedImages: selectedImages
+      selectedImages: selectedImages,
     });
     this.updateAvailableLayouts();
     this.updateCanvas();
@@ -566,7 +652,7 @@ Page({
       inlineTemplates: [],
       currentLayoutTemplate: null,
       selectedImageCount: 0,
-      selectedLayout: 0
+      selectedLayout: 0,
     });
     this.clearCanvas();
   },
@@ -574,7 +660,7 @@ Page({
   // 选择布局
   onLayoutChange (e) {
     this.setData({
-      selectedLayout: parseInt(e.detail.value)
+      selectedLayout: parseInt(e.detail.value),
     });
     this.updateCanvas();
   },
@@ -592,7 +678,7 @@ Page({
       [selectedImages[i], selectedImages[j]] = [selectedImages[j], selectedImages[i]];
     }
     this.setData({
-      selectedImages: selectedImages
+      selectedImages: selectedImages,
     });
     this.updateCanvas();
   },
@@ -600,7 +686,7 @@ Page({
   // 改变拼接方向
   onDirectionChange (e) {
     this.setData({
-      direction: e.detail.value
+      direction: e.detail.value,
     });
     this.updateCanvas();
   },
@@ -618,7 +704,7 @@ Page({
 
         // 第一步：设置新比例
         this.setData({
-          aspectRatio: ratio.value
+          aspectRatio: ratio.value,
         }, () => {
           // 第二步：计算并设置新的画布尺寸（带回调）
           that.calculateCanvasSizeWithCallback(ratio.width, ratio.height, () => {
@@ -645,14 +731,14 @@ Page({
         wx.showToast({
           title: `已切换到 ${ratio.label}`,
           icon: 'success',
-          duration: 1500
+          duration: 1500,
         });
       }
     } else {
       // 如果是从picker获取的索引
       const ratio = this.data.aspectRatios[ratioValue];
       this.setData({
-        aspectRatio: ratio.value
+        aspectRatio: ratio.value,
       }, () => {
         that.calculateCanvasSizeWithCallback(ratio.width, ratio.height, () => {
           if (that.data.currentLayoutTemplate) {
@@ -706,7 +792,7 @@ Page({
 
     this.setData({
       canvasWidth: newCanvasWidth,
-      canvasHeight: newCanvasHeight
+      canvasHeight: newCanvasHeight,
     });
   },
 
@@ -751,7 +837,7 @@ Page({
     // 使用回调确保setData完成后再执行后续操作
     this.setData({
       canvasWidth: newCanvasWidth,
-      canvasHeight: newCanvasHeight
+      canvasHeight: newCanvasHeight,
     }, () => {
       console.log('画布尺寸setData完成:', that.data.canvasWidth, 'x', that.data.canvasHeight);
 
@@ -803,7 +889,7 @@ Page({
     }
 
     this.setData({
-      spacing: parseInt(e.detail.value)
+      spacing: parseInt(e.detail.value),
     });
     this.updateCanvas();
   },
@@ -816,7 +902,7 @@ Page({
     }
 
     this.setData({
-      cornerRadius: parseInt(e.detail.value)
+      cornerRadius: parseInt(e.detail.value),
     });
     this.updateCanvas();
   },
@@ -829,7 +915,7 @@ Page({
     }
 
     this.setData({
-      backgroundColor: e.detail.value
+      backgroundColor: e.detail.value,
     });
     this.updateCanvas();
   },
@@ -856,7 +942,7 @@ Page({
       console.error('Canvas未初始化,无法绘制');
       wx.showToast({
         title: 'Canvas未初始化,请重新进入页面',
-        icon: 'none'
+        icon: 'none',
       });
       return;
     }
@@ -872,7 +958,10 @@ Page({
       return;
     }
 
-    const { canvasWidth, canvasHeight, spacing, cornerRadius, backgroundColor } = this.data;
+    const {
+      canvasWidth, canvasHeight, spacing, cornerRadius,
+      backgroundColor,
+    } = this.data;
 
     // 清空画布
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -890,12 +979,12 @@ Page({
       canvasWidth,
       canvasHeight,
       spacing,
-      currentLayoutTemplate.imageCount
+      currentLayoutTemplate.imageCount,
     );
 
     // 更新图片位置信息
     this.setData({
-      imagePositions: imagePositions
+      imagePositions: imagePositions,
     });
 
     // 绘制每个槽位
@@ -981,7 +1070,10 @@ Page({
   drawPlaceholders () {
     const ctx = this._ctx;
     const canvas = this._canvas;
-    const { canvasWidth, canvasHeight, spacing, currentLayoutTemplate } = this.data;
+    const {
+      canvasWidth, canvasHeight, spacing,
+      currentLayoutTemplate,
+    } = this.data;
 
     console.log('drawPlaceholders被调用');
     console.log('ctx存在:', !!ctx);
@@ -1005,12 +1097,12 @@ Page({
       canvasWidth,
       canvasHeight,
       spacing,
-      currentLayoutTemplate.imageCount
+      currentLayoutTemplate.imageCount,
     );
 
     // 保存位置信息
     this.setData({
-      imagePositions: positions
+      imagePositions: positions,
     });
 
     // 绘制每个占位框
@@ -1123,11 +1215,11 @@ Page({
     ctx.moveTo(element.endX, element.endY);
     ctx.lineTo(
       element.endX - headlen * Math.cos(angle - Math.PI / 6),
-      element.endY - headlen * Math.sin(angle - Math.PI / 6)
+      element.endY - headlen * Math.sin(angle - Math.PI / 6),
     );
     ctx.lineTo(
       element.endX - headlen * Math.cos(angle + Math.PI / 6),
-      element.endY - headlen * Math.sin(angle + Math.PI / 6)
+      element.endY - headlen * Math.sin(angle + Math.PI / 6),
     );
     ctx.closePath();
     ctx.fill();
@@ -1175,7 +1267,9 @@ Page({
   clearCanvas () {
     const ctx = this._ctx;
     if (ctx) {
-      const { canvasWidth, canvasHeight, backgroundColor } = this.data;
+      const {
+        canvasWidth, canvasHeight, backgroundColor,
+      } = this.data;
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
       ctx.fillStyle = backgroundColor;
       ctx.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -1189,7 +1283,11 @@ Page({
       return;
     }
 
-    const { canvasWidth, canvasHeight, watermarkText, watermarkSize, watermarkOpacity, watermarkAngle, watermarkDensity } = this.data;
+    const {
+      canvasWidth, canvasHeight, watermarkText,
+      watermarkSize, watermarkOpacity, watermarkAngle,
+      watermarkDensity,
+    } = this.data;
 
     const spacing = watermarkDensity === 'dense' ? 100 : watermarkDensity === 'medium' ? 150 : 200;
 
@@ -1218,7 +1316,9 @@ Page({
     const that = this;
     const ctx = this._ctx;
     const canvas = this._canvas;
-    const { cornerRadius, imageScale, imageRotation } = this.data;
+    const {
+      cornerRadius, imageScale, imageRotation,
+    } = this.data;
 
     console.log('开始加载图片:', imagePath);
 
@@ -1348,13 +1448,13 @@ Page({
     if (that.data.selectedImages.length === 0) {
       wx.showToast({
         title: '请先选择图片',
-        icon: 'none'
+        icon: 'none',
       });
       return;
     }
 
     wx.showLoading({
-      title: '正在导出图片...'
+      title: '正在导出图片...',
     });
 
     // 先申请相册权限
@@ -1379,12 +1479,12 @@ Page({
                   if (settingRes.authSetting['scope.writePhotosAlbum']) {
                     that.performCanvasExport();
                   }
-                }
+                },
               });
             }
-          }
+          },
         });
-      }
+      },
     });
   },
 
@@ -1418,7 +1518,7 @@ Page({
               console.error('Canvas 2D导出失败:', error);
               // 尝试使用图片合成方式
               that.exportWithImageComposition();
-            }
+            },
           }, that);
         } else {
           console.error('Canvas内容为空');
@@ -1438,14 +1538,14 @@ Page({
     wx.showToast({
       title: '使用图片合成方式导出',
       icon: 'loading',
-      duration: 2000
+      duration: 2000,
     });
 
     // 创建临时Canvas进行图片合成
     const query = wx.createSelectorQuery();
     query.select('#canvas').fields({
       node: true,
-      size: true
+      size: true,
     }).exec((res) => {
       if (res[0]) {
         const canvas = res[0].node;
@@ -1470,14 +1570,14 @@ Page({
           console.error('图片绘制失败:', error);
           wx.showToast({
             title: '导出失败，请重试',
-            icon: 'error'
+            icon: 'error',
           });
         });
       } else {
         wx.hideLoading();
         wx.showToast({
           title: '导出失败，请重试',
-          icon: 'error'
+          icon: 'error',
         });
       }
     });
@@ -1495,7 +1595,7 @@ Page({
           wx.canvasToTempFilePath({
             canvas: canvas,
             success: resolve,
-            fail: reject
+            fail: reject,
           }, that);
         });
       },
@@ -1505,7 +1605,7 @@ Page({
           wx.canvasToTempFilePath({
             canvasId: 'canvas',
             success: resolve,
-            fail: reject
+            fail: reject,
           }, that);
         });
       },
@@ -1524,20 +1624,20 @@ Page({
                 wx.hideLoading();
                 wx.showToast({
                   title: '已保存第一张图片到相册',
-                  icon: 'success'
+                  icon: 'success',
                 });
                 resolve({ tempFilePath: imagePath });
               },
               fail: (error) => {
                 console.error('保存图片失败:', error);
                 reject(error);
-              }
+              },
             });
           } else {
             reject(new Error('没有可保存的图片'));
           }
         });
-      }
+      },
     ];
 
     // 依次尝试各种导出方法
@@ -1547,7 +1647,7 @@ Page({
         wx.hideLoading();
         wx.showToast({
           title: '所有导出方式都失败了',
-          icon: 'error'
+          icon: 'error',
         });
         return;
       }
@@ -1598,7 +1698,7 @@ Page({
         that.data.canvasWidth,
         that.data.canvasHeight,
         that.data.spacing,
-        currentLayoutTemplate.imageCount
+        currentLayoutTemplate.imageCount,
       );
 
       // 使用Promise.all处理所有槽位
@@ -1695,7 +1795,7 @@ Page({
             fail: (error) => {
               console.error('导出: 获取图片信息失败:', error, image);
               resolveImg(); // 即使失败也继续
-            }
+            },
           });
         });
       });
@@ -1725,8 +1825,8 @@ Page({
           layout: this.data.selectedLayout,
           spacing: this.data.spacing,
           cornerRadius: this.data.cornerRadius,
-          backgroundColor: this.data.backgroundColor
-        }
+          backgroundColor: this.data.backgroundColor,
+        },
       };
 
       history.push(historyItem);
@@ -1746,7 +1846,7 @@ Page({
   // 切换水印功能
   onWatermarkToggle (e) {
     this.setData({
-      enableWatermark: e.detail.value
+      enableWatermark: e.detail.value,
     });
     this.updateCanvas();
   },
@@ -1754,7 +1854,7 @@ Page({
   // 更新水印文字
   onWatermarkTextChange (e) {
     this.setData({
-      watermarkText: e.detail.value
+      watermarkText: e.detail.value,
     });
     if (this.data.enableWatermark) {
       this.updateCanvas();
@@ -1764,7 +1864,7 @@ Page({
   // 更新水印字号
   onWatermarkSizeChange (e) {
     this.setData({
-      watermarkSize: parseInt(e.detail.value)
+      watermarkSize: parseInt(e.detail.value),
     });
     if (this.data.enableWatermark) {
       this.updateCanvas();
@@ -1774,7 +1874,7 @@ Page({
   // 更新水印透明度
   onWatermarkOpacityChange (e) {
     this.setData({
-      watermarkOpacity: parseFloat(e.detail.value) / 100
+      watermarkOpacity: parseFloat(e.detail.value) / 100,
     });
     if (this.data.enableWatermark) {
       this.updateCanvas();
@@ -1785,7 +1885,7 @@ Page({
   onWatermarkDensityChange (e) {
     const densities = ['sparse', 'medium', 'dense'];
     this.setData({
-      watermarkDensity: densities[e.detail.value]
+      watermarkDensity: densities[e.detail.value],
     });
     if (this.data.enableWatermark) {
       this.updateCanvas();
@@ -1796,7 +1896,7 @@ Page({
   onExportQualityChange (e) {
     const quality = this.data.exportFormats[e.detail.value];
     this.setData({
-      exportQuality: quality.value
+      exportQuality: quality.value,
     });
   },
 
@@ -1804,7 +1904,7 @@ Page({
   toggleEditMode () {
     this.setData({
       editMode: !this.data.editMode,
-      currentTool: ''
+      currentTool: '',
     });
   },
 
@@ -1813,7 +1913,7 @@ Page({
     const tool = e.currentTarget.dataset.tool;
     this.setData({
       currentTool: this.data.currentTool === tool ? '' : tool,
-      editMode: true
+      editMode: true,
     });
 
     if (tool === 'text') {
@@ -1831,14 +1931,14 @@ Page({
       success: function (res) {
         if (res.confirm && res.content) {
           that.setData({
-            textInput: res.content
+            textInput: res.content,
           });
           wx.showToast({
             title: '点击画布添加文字',
-            icon: 'none'
+            icon: 'none',
           });
         }
-      }
+      },
     });
   },
 
@@ -1856,7 +1956,7 @@ Page({
 
       this.setData({
         isDrawing: true,
-        startPoint: { x, y }
+        startPoint: { x, y },
       });
 
       if (this.data.currentTool === 'text' && this.data.textInput) {
@@ -1913,7 +2013,7 @@ Page({
       this.setData({
         isDragging: true,
         dragIndex: hitIndex,
-        dragStartPos: { x, y }
+        dragStartPos: { x, y },
       });
 
       // 视觉反馈：高亮选中的图片
@@ -1929,7 +2029,7 @@ Page({
     // 编辑工具模式
     if (this.data.isDrawing && this.data.editMode) {
       this.setData({
-        endPoint: { x, y }
+        endPoint: { x, y },
       });
       return;
     }
@@ -1966,7 +2066,9 @@ Page({
   onCanvasTouchEnd (e) {
     // 编辑工具模式
     if (this.data.isDrawing && this.data.editMode) {
-      const { currentTool, startPoint, endPoint } = this.data;
+      const {
+        currentTool, startPoint, endPoint,
+      } = this.data;
 
       if (currentTool === 'arrow') {
         this.addArrowElement(startPoint, endPoint);
@@ -1977,7 +2079,7 @@ Page({
       }
 
       this.setData({
-        isDrawing: false
+        isDrawing: false,
       });
       return;
     }
@@ -1990,7 +2092,7 @@ Page({
       // 计算拖拽距离
       const dragDistance = Math.sqrt(
         Math.pow(x - this.data.dragStartPos.x, 2) +
-        Math.pow(y - this.data.dragStartPos.y, 2)
+        Math.pow(y - this.data.dragStartPos.y, 2),
       );
 
       // 获取被拖拽图片的尺寸信息
@@ -2006,13 +2108,13 @@ Page({
           wx.showToast({
             title: '位置已交换',
             icon: 'success',
-            duration: 1000
+            duration: 1000,
           });
         } else {
           wx.showToast({
             title: '未找到交换目标',
             icon: 'none',
-            duration: 1000
+            duration: 1000,
           });
         }
       }
@@ -2026,7 +2128,7 @@ Page({
 
       this.setData({
         isDragging: false,
-        dragIndex: -1
+        dragIndex: -1,
       });
 
       // 重新绘制最终布局
@@ -2042,11 +2144,11 @@ Page({
       y: y,
       text: this.data.textInput,
       color: this.data.textColor,
-      size: this.data.textSize
+      size: this.data.textSize,
     };
 
     this.setData({
-      editElements: [...this.data.editElements, element]
+      editElements: [...this.data.editElements, element],
     });
 
     this.redrawCanvas();
@@ -2061,11 +2163,11 @@ Page({
       endX: endPoint.x,
       endY: endPoint.y,
       color: this.data.strokeColor,
-      width: this.data.strokeWidth
+      width: this.data.strokeWidth,
     };
 
     this.setData({
-      editElements: [...this.data.editElements, element]
+      editElements: [...this.data.editElements, element],
     });
 
     this.redrawCanvas();
@@ -2086,11 +2188,11 @@ Page({
       height: height,
       strokeColor: this.data.strokeColor,
       strokeWidth: this.data.strokeWidth,
-      fillColor: this.data.fillColor
+      fillColor: this.data.fillColor,
     };
 
     this.setData({
-      editElements: [...this.data.editElements, element]
+      editElements: [...this.data.editElements, element],
     });
 
     this.redrawCanvas();
@@ -2100,7 +2202,7 @@ Page({
   addCircleElement (startPoint, endPoint) {
     const radius = Math.sqrt(
       Math.pow(endPoint.x - startPoint.x, 2) +
-      Math.pow(endPoint.y - startPoint.y, 2)
+      Math.pow(endPoint.y - startPoint.y, 2),
     ) / 2;
 
     const element = {
@@ -2110,11 +2212,11 @@ Page({
       radius: radius,
       strokeColor: this.data.strokeColor,
       strokeWidth: this.data.strokeWidth,
-      fillColor: this.data.fillColor
+      fillColor: this.data.fillColor,
     };
 
     this.setData({
-      editElements: [...this.data.editElements, element]
+      editElements: [...this.data.editElements, element],
     });
 
     this.redrawCanvas();
@@ -2123,7 +2225,7 @@ Page({
   // 清除编辑元素
   clearEditElements () {
     this.setData({
-      editElements: []
+      editElements: [],
     });
     this.updateCanvas();
   },
@@ -2147,7 +2249,7 @@ Page({
     [selectedImages[index1], selectedImages[index2]] = [selectedImages[index2], selectedImages[index1]];
 
     this.setData({
-      selectedImages: selectedImages
+      selectedImages: selectedImages,
     });
   },
 
@@ -2206,7 +2308,7 @@ Page({
             currentX - scaledWidth / 2,
             currentY - scaledHeight / 2,
             scaledWidth,
-            scaledHeight
+            scaledHeight,
           );
 
           ctx.restore();
@@ -2278,16 +2380,16 @@ Page({
       success: function () {
         wx.showToast({
           title: '保存成功',
-          icon: 'success'
+          icon: 'success',
         });
       },
       fail: function (error) {
         console.error('保存到相册失败:', error);
         wx.showToast({
           title: '保存失败，请检查权限',
-          icon: 'error'
+          icon: 'error',
         });
-      }
+      },
     });
   },
 
@@ -2295,7 +2397,7 @@ Page({
   onThumbnailTap (e) {
     const index = parseInt(e.currentTarget.dataset.index);
     this.setData({
-      selectedImageIndex: index
+      selectedImageIndex: index,
     });
 
     // 可以添加高亮选中图片的逻辑
@@ -2319,7 +2421,7 @@ Page({
             this.deleteImage({ currentTarget: { dataset: { index } } });
             break;
         }
-      }
+      },
     });
   },
 
@@ -2361,7 +2463,7 @@ Page({
           if (res.confirm) {
             this.selectImageForSlot(index);
           }
-        }
+        },
       });
     } else {
       // 空槽位,直接添加
@@ -2380,7 +2482,7 @@ Page({
       success: function (res) {
         const tempFile = res.tempFiles[0];
         const newImage = {
-          path: tempFile.tempFilePath
+          path: tempFile.tempFilePath,
         };
 
         // 更新槽位
@@ -2390,7 +2492,7 @@ Page({
         // 如果槽位已有图片,替换
         if (!updatedSlots[slotIndex].isEmpty) {
           const oldImageIndex = updatedImages.findIndex(img =>
-            img.path === updatedSlots[slotIndex].image.path
+            img.path === updatedSlots[slotIndex].image.path,
           );
           if (oldImageIndex !== -1) {
             updatedImages[oldImageIndex] = newImage;
@@ -2410,7 +2512,7 @@ Page({
         that.setData({
           imageSlots: updatedSlots,
           selectedImages: updatedImages,
-          workflowStep: 'editing'
+          workflowStep: 'editing',
         }, () => {
           // setData完成后重新绘制Canvas
           console.log('setData完成,开始重绘Canvas');
@@ -2423,9 +2525,9 @@ Page({
 
         wx.showToast({
           title: '图片已添加',
-          icon: 'success'
+          icon: 'success',
         });
-      }
+      },
     });
   },
 
@@ -2449,7 +2551,7 @@ Page({
 
     // 从selectedImages中移除
     const imageIndex = updatedImages.findIndex(img =>
-      img.path === slot.image.path
+      img.path === slot.image.path,
     );
     if (imageIndex !== -1) {
       updatedImages.splice(imageIndex, 1);
@@ -2460,7 +2562,7 @@ Page({
 
     this.setData({
       imageSlots: updatedSlots,
-      selectedImages: updatedImages
+      selectedImages: updatedImages,
     });
 
     // 重新绘制Canvas
@@ -2472,7 +2574,7 @@ Page({
 
     wx.showToast({
       title: '已移除',
-      icon: 'success'
+      icon: 'success',
     });
   },
 
@@ -2480,7 +2582,7 @@ Page({
   changeLayout () {
     // 直接返回布局选择页面,不清空图片
     this.setData({
-      workflowStep: 'selectLayout'
+      workflowStep: 'selectLayout',
     });
     console.log('返回布局选择页面,保留已有图片');
   },
@@ -2491,7 +2593,7 @@ Page({
     const modeName = newMode === 'cover' ? '填满' : '完全显示';
 
     this.setData({
-      imageFitMode: newMode
+      imageFitMode: newMode,
     }, () => {
       // 重新绘制Canvas
       this.updateCanvas();
@@ -2499,7 +2601,7 @@ Page({
       wx.showToast({
         title: `图片显示: ${modeName}`,
         icon: 'success',
-        duration: 1500
+        duration: 1500,
       });
     });
 
@@ -2512,7 +2614,7 @@ Page({
     console.log('切换到分类:', imageCount);
 
     this.setData({
-      selectedImageCount: imageCount
+      selectedImageCount: imageCount,
     });
   },
 
@@ -2565,7 +2667,7 @@ Page({
           imageSlots.push({
             index: i,
             image: existingImages[i],
-            isEmpty: false
+            isEmpty: false,
           });
           selectedImages.push(existingImages[i]);
           console.log('迁移图片到槽位', i, ':', existingImages[i].path);
@@ -2574,7 +2676,7 @@ Page({
           imageSlots.push({
             index: i,
             image: null,
-            isEmpty: true
+            isEmpty: true,
           });
         }
       }
@@ -2586,7 +2688,7 @@ Page({
         currentLayoutTemplate: template,
         imageSlots: imageSlots,
         selectedImages: selectedImages,
-        workflowStep: 'addImages'  // 进入添加图片阶段
+        workflowStep: 'addImages',  // 进入添加图片阶段
       }, () => {
         // 刚切换完布局：立刻按新布局的张数刷新下方内联模板
         that.updateInlineTemplatesForCount(template.imageCount);
@@ -2606,7 +2708,7 @@ Page({
               console.error('Canvas初始化失败');
               wx.showToast({
                 title: 'Canvas初始化失败,请重新进入',
-                icon: 'none'
+                icon: 'none',
               });
             }
           }, 500);
@@ -2628,7 +2730,7 @@ Page({
       wx.showToast({
         title: `已选择: ${template.name}`,
         icon: 'success',
-        duration: 1500
+        duration: 1500,
       });
     }
   },
@@ -2636,7 +2738,7 @@ Page({
   // 关闭图片操作遮罩
   closeImageOverlay () {
     this.setData({
-      selectedImageIndex: -1
+      selectedImageIndex: -1,
     });
   },
 
@@ -2653,12 +2755,12 @@ Page({
           const selectedImages = [...this.data.selectedImages];
           selectedImages[index] = {
             path: res.tempFiles[0].tempFilePath,
-            size: res.tempFiles[0].size
+            size: res.tempFiles[0].size,
           };
 
           this.setData({
             selectedImages: selectedImages,
-            selectedImageIndex: -1
+            selectedImageIndex: -1,
           });
 
           this.loadImagesInfo(selectedImages).then(() => {
@@ -2667,10 +2769,10 @@ Page({
 
           wx.showToast({
             title: '图片已替换',
-            icon: 'success'
+            icon: 'success',
           });
         }
-      }
+      },
     });
   },
 
@@ -2682,11 +2784,11 @@ Page({
     // 由于小程序限制，实际旋转需要在canvas中实现
     wx.showToast({
       title: '旋转功能开发中',
-      icon: 'none'
+      icon: 'none',
     });
 
     this.setData({
-      selectedImageIndex: -1
+      selectedImageIndex: -1,
     });
   },
 
@@ -2719,10 +2821,15 @@ Page({
     const selectedImages = [];
     for (let i = 0; i < template.imageCount; i++) {
       if (i < existingImages.length) {
-        imageSlots.push({ index: i, image: existingImages[i], isEmpty: false });
+        imageSlots.push({
+          index: i, image: existingImages[i],
+          isEmpty: false,
+        });
         selectedImages.push(existingImages[i]);
       } else {
-        imageSlots.push({ index: i, image: null, isEmpty: true });
+        imageSlots.push({
+          index: i, image: null, isEmpty: true,
+        });
       }
     }
 
@@ -2730,27 +2837,18 @@ Page({
       currentLayoutTemplate: template,
       imageSlots,
       selectedImages,
-      workflowStep: 'editing'
+      workflowStep: 'editing',
     }, () => {
       if (!that._ctx || !that._canvas) {
         setTimeout(() => {
           if (that._ctx && that._canvas) {
-            // 刚切换完布局：立刻按新布局的张数刷新下方内联模板
-            that.updateInlineTemplatesForCount(template.imageCount);
 
-            //                
             if (selectedImages.length > 0) {
               that.updateCanvas();
             } else {
               that.drawPlaceholders();
             }
           }
-          /*
-
-                    //
-                    //                //           //       that.updateInlineTemplatesForCount(template.imageCount);
-
-          */
 
         }, 300);
       } else {
@@ -2776,10 +2874,10 @@ Page({
         if (res.confirm) {
           this.removeImage({ currentTarget: { dataset: { index } } });
           this.setData({
-            selectedImageIndex: -1
+            selectedImageIndex: -1,
           });
         }
-      }
+      },
     });
   },
 
@@ -2800,7 +2898,7 @@ Page({
     this.setData({
       showImageToolbar: true,
       toolbarImageIndex: imageIndex,
-      toolbarPosition: { x: 0, y: 0 }
+      toolbarPosition: { x: 0, y: 0 },
     }, () => {
       // 工具条显示后，获取其实际尺寸
       const query = wx.createSelectorQuery().in(that);
@@ -2870,7 +2968,7 @@ Page({
 
         // 更新工具条位置
         that.setData({
-          toolbarPosition: { x: toolbarLeft, y: toolbarY }
+          toolbarPosition: { x: toolbarLeft, y: toolbarY },
         });
       });
     });
@@ -2880,7 +2978,7 @@ Page({
   hideImageToolbar () {
     this.setData({
       showImageToolbar: false,
-      toolbarImageIndex: -1
+      toolbarImageIndex: -1,
     });
   },
 
@@ -2919,6 +3017,11 @@ Page({
       sourceType: ['album', 'camera'],
       success: (res) => {
         if (res.tempFiles && res.tempFiles.length > 0) {
+          wx.showLoading({
+            title: '处理中...',
+            mask: true
+          });
+
           const newImagePath = res.tempFiles[0].tempFilePath;
 
           // 获取图片信息
@@ -2934,33 +3037,42 @@ Page({
                 image: {
                   path: newImagePath,
                   width: imgInfo.width,
-                  height: imgInfo.height
-                }
+                  height: imgInfo.height,
+                },
               };
 
               // 更新选中图片列表
               selectedImages[index] = {
                 path: newImagePath,
                 width: imgInfo.width,
-                height: imgInfo.height
+                height: imgInfo.height,
               };
 
               this.setData({
                 imageSlots: imageSlots,
-                selectedImages: selectedImages
+                selectedImages: selectedImages,
               });
 
               // 重新绘制画布
               this.updateCanvas();
 
+              wx.hideLoading();
               wx.showToast({
                 title: '图片已替换',
-                icon: 'success'
+                icon: 'success',
+              });
+            },
+            fail: (err) => {
+              console.error('获取图片信息失败:', err);
+              wx.hideLoading();
+              wx.showToast({
+                title: '处理失败',
+                icon: 'none'
               });
             }
           });
         }
-      }
+      },
     });
   },
 
@@ -2980,7 +3092,7 @@ Page({
     imageRotation[index] = newRotation;
 
     this.setData({
-      imageRotation: imageRotation
+      imageRotation: imageRotation,
     });
 
     // 重新绘制画布
@@ -2988,7 +3100,7 @@ Page({
 
     wx.showToast({
       title: `旋转${newRotation}°`,
-      icon: 'none'
+      icon: 'none',
     });
   },
 
@@ -3008,7 +3120,7 @@ Page({
     imageScale[index] = newScale;
 
     this.setData({
-      imageScale: imageScale
+      imageScale: imageScale,
     });
 
     // 重新绘制画布
@@ -3016,7 +3128,7 @@ Page({
 
     wx.showToast({
       title: `${Math.round(newScale * 100)}%`,
-      icon: 'none'
+      icon: 'none',
     });
   },
 
@@ -3036,7 +3148,7 @@ Page({
     imageScale[index] = newScale;
 
     this.setData({
-      imageScale: imageScale
+      imageScale: imageScale,
     });
 
     // 重新绘制画布
@@ -3044,7 +3156,7 @@ Page({
 
     wx.showToast({
       title: `${Math.round(newScale * 100)}%`,
-      icon: 'none'
+      icon: 'none',
     });
   },
 
@@ -3067,7 +3179,7 @@ Page({
 
           imageSlots[index] = {
             isEmpty: true,
-            image: null
+            image: null,
           };
 
           selectedImages[index] = null;
@@ -3082,7 +3194,7 @@ Page({
             imageSlots: imageSlots,
             selectedImages: selectedImages,
             imageScale: imageScale,
-            imageRotation: imageRotation
+            imageRotation: imageRotation,
           });
 
           // 重新绘制画布
@@ -3090,10 +3202,10 @@ Page({
 
           wx.showToast({
             title: '已删除',
-            icon: 'success'
+            icon: 'success',
           });
         }
-      }
+      },
     });
-  }
+  },
 });
