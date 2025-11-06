@@ -1,16 +1,30 @@
 <!--pages/collage/collage.wxml-->
 <view class="container">
-  <!-- Canvas元素 - 始终存在,根据步骤改变样式 -->
-  <view class="global-canvas-wrapper" id="canvas-wrapper" style="{{workflowStep === 'selectLayout' ? 'position: fixed; left: -9999px; top: -9999px; width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px;' : 'width: ' + canvasWidth + 'px; height: ' + canvasHeight + 'px; margin: 20rpx auto;'}}" catchtap="stopPropagation">
-    <canvas
-      type="2d"
-      id="canvas"
-      class="canvas"
-      style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; display: block;"
-      bindtouchstart="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchStart' : ''}}"
-      bindtouchmove="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchMove' : ''}}"
-      bindtouchend="{{workflowStep !== 'selectLayout' ? 'onCanvasTouchEnd' : ''}}">
-    </canvas>
+  <!-- 自定义导航栏 -->
+  <view class="custom-navigation-bar" style="padding-top: {{statusBarHeight}}px;">
+    <!-- 导航栏内容 -->
+    <view class="navigation-bar-content" style="height: {{navigationBarHeight}}px;">
+      <!-- 左侧按钮组 -->
+      <view class="nav-left">
+        <!-- 返回按钮 -->
+        <view class="nav-back" bindtap="onNavBack">
+          <text class="nav-back-icon">‹</text>
+        </view>
+
+        <!-- 保存按钮 -->
+        <view class="nav-save" wx:if="{{selectedImages.length > 0}}" bindtap="exportImage">
+          <text class="nav-save-text">保存</text>
+        </view>
+      </view>
+
+      <!-- 页面标题 -->
+      <view class="nav-title">
+        <text class="nav-title-text">拼图编辑</text>
+      </view>
+
+      <!-- 右侧占位,保持布局平衡 -->
+      <view class="nav-right"></view>
+    </view>
   </view>
 
   <!-- 步骤1: 选择布局模板 -->
@@ -86,88 +100,105 @@
     </scroll-view>
   </view>
 
-  <!-- 步骤2/3: 添加图片 / 编辑 -->
-  <view class="editing-area" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
-    <!-- 上半部分：Canvas预览区域 -->
-    <view class="image-area">
-      <!-- 布局信息提示 -->
-      <view class="layout-info-bar" wx:if="{{currentLayoutTemplate}}">
-        <text class="layout-info-text">{{currentLayoutTemplate.name}} ({{currentLayoutTemplate.imageCount}}张)</text>
-        <view class="layout-info-actions">
-          <button class="btn-change-layout" bindtap="changeLayout">更换布局</button>
-          <button class="btn-save-primary" bindtap="exportImage" wx:if="{{selectedImages.length > 0}}">
-            保存到相册
-          </button>
-        </view>
+  <!-- 步骤2/3: 添加图片 / 编辑 - 新布局 -->
+  <view class="editing-area-new" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
+
+    <!-- 画布区域 - 自适应高度 -->
+    <view class="canvas-area-flex">
+      <!-- Loading 遮罩 -->
+      <view class="loading-overlay" wx:if="{{isLoading}}">
+        <view class="loading-spinner"></view>
+        <text class="loading-text">{{loadingText}}</text>
       </view>
+
+      <!-- Canvas 元素 -->
+      <view class="canvas-wrapper-editing" id="canvas-wrapper" catchtap="stopPropagation">
+        <canvas
+          type="2d"
+          id="canvas"
+          class="canvas"
+          style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; display: block;"
+          bindtouchstart="onCanvasTouchStart"
+          bindtouchmove="onCanvasTouchMove"
+          bindtouchend="onCanvasTouchEnd">
+        </canvas>
+      </view>
+
     </view>
 
-    <!-- 下半部分：控制区域 -->
-    <view class="control-area" bindscroll="onPageScroll">
-      <!-- 图片槽位管理 -->
-      <view class="control-section">
-        <view class="section-header">
-          <text class="section-title">图片 ({{selectedImages.length}}/{{currentLayoutTemplate.imageCount}})</text>
-          <button class="btn-add" bindtap="selectImages">一键上传</button>
+    <!-- 底部操作区域 - 固定高度 -->
+    <view class="bottom-control-area">
+      <!-- 简约 Tab 导航栏 -->
+      <view class="tab-bar-minimal">
+        <view
+          wx:for="{{tabs}}"
+          wx:key="id"
+          class="tab-item-minimal {{currentTab === item.id ? 'active' : ''}}"
+          data-tab-id="{{item.id}}"
+          bindtap="onTabChange"
+        >
+          <text class="tab-label">{{item.name}}</text>
         </view>
-
-        <!-- 图片槽位列表 -->
-        <scroll-view class="image-slots-scroll" scroll-x bindscroll="onPageScroll">
-          <view class="image-slots">
-            <view
-              class="slot-item {{item.isEmpty ? 'empty' : 'filled'}}"
-              wx:for="{{imageSlots}}"
-              wx:key="index"
-              data-index="{{index}}"
-              bindtap="onSlotTap"
-            >
-              <!-- 空槽位 -->
-              <view class="slot-empty" wx:if="{{item.isEmpty}}">
-                <text class="slot-plus">+</text>
-                <text class="slot-number">{{index + 1}}</text>
-              </view>
-
-              <!-- 已填充槽位 -->
-              <view class="slot-filled" wx:else>
-                <image src="{{item.image.path}}" mode="aspectFill" class="slot-image"/>
-                <view class="slot-number-badge">{{index + 1}}</view>
-                <view class="slot-remove" catchtap="onSlotRemove" data-index="{{index}}">×</view>
-              </view>
-            </view>
-          </view>
-        </scroll-view>
       </view>
 
-      <!-- 样式控制 -->
-      <view class="control-section">
-      <view class="section-header">
-        <text class="section-title">样式</text>
-      </view>
+      <!-- Tab 内容区（可滚动） -->
+      <scroll-view class="tab-content" scroll-y enhanced show-scrollbar="{{false}}">
 
-      <view class="style-controls">
-        <!-- 画布比例 -->
-        <view class="control-item control-item-full">
-          <text class="control-label">画布比例</text>
-          <scroll-view class="aspect-ratio-scroll-inline" scroll-x bindscroll="onPageScroll">
-            <view class="aspect-ratio-list-inline">
+        <!-- Tab 1: 画布设置 -->
+        <view wx:if="{{currentTab === 'canvas'}}" class="tab-panel">
+          <!-- 画布比例 -->
+          <scroll-view class="ratio-scroll-horizontal" scroll-x enhanced show-scrollbar="{{false}}">
+            <view class="ratio-chips">
               <view
-                class="aspect-ratio-chip {{aspectRatio === item.value ? 'active' : ''}}"
+                class="ratio-chip {{aspectRatio === item.value ? 'active' : ''}}"
                 wx:for="{{aspectRatios}}"
                 wx:key="value"
                 data-ratio="{{item.value}}"
                 bindtap="onAspectRatioChange"
               >
-                <text class="ratio-chip-label">{{item.label}}</text>
+                <text class="ratio-label">{{item.label}}</text>
               </view>
             </view>
           </scroll-view>
+
+          <!-- 样式设置 -->
+          <view class="style-controls-compact">
+            <!-- 图片显示模式 -->
+            <view class="control-row">
+              <text class="control-label">图片显示</text>
+              <view class="control-switch-wrapper">
+                <text class="switch-label">{{imageFitMode === 'cover' ? '填满' : '完全显示'}}</text>
+                <switch checked="{{imageFitMode === 'cover'}}" bindchange="toggleImageFitMode" color="#07c160"/>
+              </view>
+            </view>
+
+            <!-- 间距 -->
+            <view class="control-row">
+              <text class="control-label">间距</text>
+              <slider class="control-slider" value="{{spacing}}" min="0" max="50" bindchange="onSpacingChange"/>
+              <text class="control-value">{{spacing}}</text>
+            </view>
+
+            <!-- 圆角 -->
+            <view class="control-row">
+              <text class="control-label">圆角</text>
+              <slider class="control-slider" value="{{cornerRadius}}" min="0" max="50" bindchange="onCornerRadiusChange"/>
+              <text class="control-value">{{cornerRadius}}</text>
+            </view>
+
+            <!-- 背景色 -->
+            <view class="control-row">
+              <text class="control-label">背景</text>
+              <input class="color-picker" type="color" value="{{backgroundColor}}" bindchange="onBackgroundColorChange"/>
+            </view>
+          </view>
         </view>
 
-        <!-- 布局模版（根据已选图片数量推荐） -->
-        <view class="control-item control-item-full" wx:if="{{inlineTemplates && inlineTemplates.length}}">
-          <text class="control-label">布局模版</text>
-          <scroll-view class="template-scroll-inline" scroll-x>
-            <view class="template-list-inline">
+        <!-- Tab 2: 布局模版 -->
+        <view wx:if="{{currentTab === 'layout'}}" class="tab-panel">
+          <!-- 推荐布局 -->
+          <scroll-view class="template-scroll-horizontal" scroll-x enhanced show-scrollbar="{{false}}" wx:if="{{inlineTemplates && inlineTemplates.length}}">
+            <view class="template-chips">
               <view
                 class="template-chip {{currentLayoutTemplate && currentLayoutTemplate.name === item.name ? 'active' : ''}}"
                 wx:for="{{inlineTemplates}}"
@@ -185,123 +216,38 @@
           </scroll-view>
         </view>
 
-
-        <!-- 图片显示模式 -->
-        <view class="control-item">
-          <text class="control-label">图片显示</text>
-          <view class="control-switch-wrapper">
-            <text class="switch-label">{{imageFitMode === 'cover' ? '填满' : '完全显示'}}</text>
-            <switch checked="{{imageFitMode === 'cover'}}" bindchange="toggleImageFitMode" color="#007AFF"/>
-          </view>
-        </view>
-
-        <!-- 间距 -->
-        <view class="control-item">
-          <text class="control-label">间距</text>
-          <slider class="control-slider" value="{{spacing}}" min="0" max="50" bindchange="onSpacingChange"/>
-          <text class="control-value">{{spacing}}</text>
-        </view>
-
-        <!-- 圆角 -->
-        <view class="control-item">
-          <text class="control-label">圆角</text>
-          <slider class="control-slider" value="{{cornerRadius}}" min="0" max="50" bindchange="onCornerRadiusChange"/>
-          <text class="control-value">{{cornerRadius}}</text>
-        </view>
-
-        <!-- 背景色 -->
-        <view class="control-item">
-          <text class="control-label">背景</text>
-          <input class="color-picker" type="color" value="{{backgroundColor}}" bindchange="onBackgroundColorChange"/>
-        </view>
-      </view>
+      </scroll-view>
     </view>
 
-    <!-- 工具控制 -->
-    <view class="control-section" wx:if="{{selectedImages.length > 0}}">
-      <view class="section-header">
-        <text class="section-title">工具</text>
-      </view>
-
-      <view class="tool-grid">
-        <view
-          class="tool-item {{editMode && currentTool === 'text' ? 'selected' : ''}}"
-          data-tool="text"
-          bindtap="onToolSelect"
-        >
-          <text class="tool-icon">Aa</text>
-          <text class="tool-name">文字</text>
-        </view>
-        <view
-          class="tool-item {{editMode && currentTool === 'arrow' ? 'selected' : ''}}"
-          data-tool="arrow"
-          bindtap="onToolSelect"
-        >
-          <text class="tool-icon">→</text>
-          <text class="tool-name">箭头</text>
-        </view>
-        <view
-          class="tool-item {{editMode && currentTool === 'rect' ? 'selected' : ''}}"
-          data-tool="rect"
-          bindtap="onToolSelect"
-        >
-          <text class="tool-icon">▢</text>
-          <text class="tool-name">矩形</text>
-        </view>
-        <view
-          class="tool-item {{editMode && currentTool === 'circle' ? 'selected' : ''}}"
-          data-tool="circle"
-          bindtap="onToolSelect"
-        >
-          <text class="tool-icon">○</text>
-          <text class="tool-name">圆形</text>
-        </view>
-      </view>
-
-      <!-- 文字输入 -->
-      <view class="text-input-area" wx:if="{{editMode && currentTool === 'text'}}">
-        <input class="text-input" placeholder="输入文字内容" value="{{textInput}}" bindinput="onTextInput"/>
-      </view>
+    <!-- 悬浮添加图片按钮 -->
+    <view class="fab-add-image" bindtap="selectImages">
+      <text class="fab-icon">+</text>
     </view>
 
-    <!-- 底部操作栏 -->
-    <view class="bottom-actions">
-      <button class="action-btn secondary" bindtap="randomLayout" wx:if="{{selectedImages.length > 1}}">
-        随机
-      </button>
-      <button class="action-btn secondary" bindtap="clearImages" wx:if="{{selectedImages.length > 0}}">
-        清空
-      </button>
-      <button class="action-btn primary" bindtap="exportImage" wx:if="{{selectedImages.length > 0}}">
-        保存到相册
-      </button>
-    </view>
-    </view>
-  </view>
-
-  <!-- 图片操作工具条 - 使用 cover-view 覆盖在 Canvas 上 -->
-  <cover-view class="image-toolbar" wx:if="{{showImageToolbar}}" style="left: {{toolbarPosition.x}}px; top: {{toolbarPosition.y}}px;">
-    <cover-view class="toolbar-container">
-      <cover-view class="toolbar-item" bindtap="onToolbarReplace">
-        <cover-view class="toolbar-icon">🖼️</cover-view>
-        <cover-view class="toolbar-label">换一张</cover-view>
-      </cover-view>
-      <cover-view class="toolbar-item" bindtap="onToolbarRotate">
-        <cover-view class="toolbar-icon">🔄</cover-view>
-        <cover-view class="toolbar-label">旋转</cover-view>
-      </cover-view>
-      <cover-view class="toolbar-item" bindtap="onToolbarZoomIn">
-        <cover-view class="toolbar-icon">➕</cover-view>
-        <cover-view class="toolbar-label">放大</cover-view>
-      </cover-view>
-      <cover-view class="toolbar-item" bindtap="onToolbarZoomOut">
-        <cover-view class="toolbar-icon">➖</cover-view>
-        <cover-view class="toolbar-label">缩小</cover-view>
-      </cover-view>
-      <cover-view class="toolbar-item" bindtap="onToolbarDelete">
-        <cover-view class="toolbar-icon">🗑️</cover-view>
-        <cover-view class="toolbar-label">删除</cover-view>
+    <!-- 图片操作工具条 - 使用 cover-view 覆盖在 Canvas 上 -->
+    <cover-view class="image-toolbar" wx:if="{{showImageToolbar}}" style="left: {{toolbarPosition.x}}px; top: {{toolbarPosition.y}}px;">
+      <cover-view class="toolbar-container">
+        <cover-view class="toolbar-item" bindtap="onToolbarReplace">
+          <cover-view class="toolbar-icon">🖼️</cover-view>
+          <cover-view class="toolbar-label">换一张</cover-view>
+        </cover-view>
+        <cover-view class="toolbar-item" bindtap="onToolbarRotate">
+          <cover-view class="toolbar-icon">🔄</cover-view>
+          <cover-view class="toolbar-label">旋转</cover-view>
+        </cover-view>
+        <cover-view class="toolbar-item" bindtap="onToolbarZoomIn">
+          <cover-view class="toolbar-icon">➕</cover-view>
+          <cover-view class="toolbar-label">放大</cover-view>
+        </cover-view>
+        <cover-view class="toolbar-item" bindtap="onToolbarZoomOut">
+          <cover-view class="toolbar-icon">➖</cover-view>
+          <cover-view class="toolbar-label">缩小</cover-view>
+        </cover-view>
+        <cover-view class="toolbar-item" bindtap="onToolbarDelete">
+          <cover-view class="toolbar-icon">🗑️</cover-view>
+          <cover-view class="toolbar-label">删除</cover-view>
+        </cover-view>
       </cover-view>
     </cover-view>
-  </cover-view>
+  </view>
 </view>

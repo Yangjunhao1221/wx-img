@@ -13,6 +13,22 @@ Page({
     // 新流程: 先选布局,再选图片
     workflowStep: 'selectLayout', // selectLayout, addImages, editing
 
+    // Tab 相关（新增）
+    currentTab: 'canvas',  // 'canvas' | 'layout'
+    tabs: [
+      { id: 'canvas', name: '画布设置' },
+      { id: 'layout', name: '布局模版' }
+    ],
+
+    // 自定义导航栏相关
+    statusBarHeight: 0,      // 状态栏高度
+    navigationBarHeight: 44, // 导航栏高度(不含状态栏)
+    menuButtonInfo: null,    // 胶囊按钮信息
+
+    // Loading 状态（新增）
+    isLoading: false,
+    loadingText: '加载中...',
+
     // 图片相关
     imageList: [],
     selectedImages: [],
@@ -183,6 +199,10 @@ Page({
   onReady: function () {
     // 页面渲染完成后初始化Canvas
     console.log('布局拼图页面onReady,开始初始化Canvas');
+
+    // 初始化自定义导航栏
+    this.initCustomNavigationBar();
+
     this.initCanvas();
   },
 
@@ -235,11 +255,7 @@ Page({
     const count = Math.min((paths || []).length, this.data.maxImages || 16);
     if (count <= 0) return;
 
-    // 显示加载提示
-    wx.showLoading({
-      title: '加载中...',
-      mask: true
-    });
+    console.log('初始化图片，数量:', count);
 
     const selectedImages = paths.slice(0, count).map(p => ({ path: p }));
 
@@ -273,6 +289,7 @@ Page({
       }
     }
 
+    // 设置数据并显示 Loading
     this.setData({
       selectedImages,
       imageSlots,
@@ -280,23 +297,67 @@ Page({
       inlineTemplates: inlineTemplates,
       selectedImageCount: count,
       workflowStep: 'editing',
+      isLoading: true,
+      loadingText: '正在加载图片...',
     }, () => {
-      // 预加载图片信息
-      this.loadImagesInfo().then(() => {
-        // 标记需要绘制，等待Canvas初始化完成
-        this._pendingDraw = true;
-        // 如果Canvas已就绪，立即绘制
-        if (this._ctx && this._canvas) {
-          this.drawCanvasContent();
+      console.log('数据已设置，开始等待Canvas就绪');
+      // 真机兼容：等待Canvas初始化完成
+      this.waitForCanvasReady().then(() => {
+        console.log('Canvas已就绪，开始加载图片信息');
+        return this.loadImagesInfo();
+      }).then(() => {
+        console.log('图片信息加载完成，开始绘制');
+        if (this.data.selectedImages.length > 0) {
+          this.updateCanvas();
+        } else {
+          this.drawPlaceholders();
         }
+        // 隐藏 Loading
+        this.setData({
+          isLoading: false
+        });
       }).catch((err) => {
-        console.error('加载图片信息失败:', err);
-        wx.hideLoading();
+        console.error('加载图片失败:', err);
+        this.setData({
+          isLoading: false
+        });
         wx.showToast({
           title: '图片加载失败',
           icon: 'none'
         });
       });
+    });
+  },
+
+  // 等待Canvas就绪（真机兼容）
+  waitForCanvasReady () {
+    return new Promise((resolve, reject) => {
+      // 如果已经就绪，直接返回
+      if (this._ctx && this._canvas) {
+        console.log('Canvas已经就绪');
+        resolve();
+        return;
+      }
+
+      console.log('等待Canvas初始化...');
+      // 最多等待3秒
+      let attempts = 0;
+      const maxAttempts = 30; // 30次 * 100ms = 3秒
+
+      const checkCanvas = () => {
+        attempts++;
+        if (this._ctx && this._canvas) {
+          console.log(`Canvas就绪 (尝试${attempts}次)`);
+          resolve();
+        } else if (attempts >= maxAttempts) {
+          console.error('Canvas初始化超时');
+          reject(new Error('Canvas初始化超时'));
+        } else {
+          setTimeout(checkCanvas, 100);
+        }
+      };
+
+      checkCanvas();
     });
   },
 
@@ -320,6 +381,61 @@ Page({
     wx.hideLoading();
   },
 
+
+  // 初始化自定义导航栏
+  initCustomNavigationBar () {
+    try {
+      // 获取系统信息
+      const systemInfo = wx.getSystemInfoSync();
+      const statusBarHeight = systemInfo.statusBarHeight || 0;
+
+      // 获取胶囊按钮信息
+      const menuButtonInfo = wx.getMenuButtonBoundingClientRect();
+
+      // 计算导航栏高度 = 胶囊按钮高度 + (胶囊按钮top - 状态栏高度) * 2
+      const navigationBarHeight = menuButtonInfo.height + (menuButtonInfo.top - statusBarHeight) * 2;
+
+      this.setData({
+        statusBarHeight: statusBarHeight,
+        navigationBarHeight: navigationBarHeight,
+        menuButtonInfo: menuButtonInfo
+      });
+
+      // 设置 CSS 变量,用于页面布局
+      const query = wx.createSelectorQuery().in(this);
+      query.select('.container').node();
+      query.exec((res) => {
+        if (res && res[0]) {
+          const containerNode = res[0].node;
+          if (containerNode && containerNode.style) {
+            containerNode.style.setProperty('--status-bar-height', `${statusBarHeight}px`);
+            containerNode.style.setProperty('--navigation-bar-height', `${navigationBarHeight}px`);
+          }
+        }
+      });
+
+      console.log('自定义导航栏初始化:', {
+        statusBarHeight,
+        navigationBarHeight,
+        menuButtonInfo
+      });
+    } catch (error) {
+      console.error('初始化自定义导航栏失败:', error);
+      // 使用默认值
+      this.setData({
+        statusBarHeight: 20,
+        navigationBarHeight: 44,
+        menuButtonInfo: null
+      });
+    }
+  },
+
+  // 返回按钮点击
+  onNavBack () {
+    wx.navigateBack({
+      delta: 1
+    });
+  },
 
   // 初始化默认画布尺寸
   initDefaultCanvasSize () {
@@ -3206,6 +3322,17 @@ Page({
           });
         }
       },
+    });
+  },
+
+  // ==================== Tab 切换相关方法 ====================
+
+  // Tab 切换
+  onTabChange (e) {
+    const tabId = e.currentTarget.dataset.tabId;
+    console.log('切换到Tab:', tabId);
+    this.setData({
+      currentTab: tabId
     });
   },
 });
