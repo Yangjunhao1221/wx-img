@@ -28,7 +28,7 @@
   </view>
 
   <!-- 步骤1: 选择布局模板 -->
-  <view class="layout-selection-area" wx:if="{{workflowStep === 'selectLayout'}}">
+  <view class="layout-selection-area" style="padding-top: {{statusBarHeight + navigationBarHeight}}px;" wx:if="{{workflowStep === 'selectLayout'}}">
     <view class="step-header">
       <text class="step-title">📐 选择布局模板</text>
       <text class="step-desc">支持1-16张图片,共{{allLayoutTemplates.length}}种布局</text>
@@ -101,10 +101,10 @@
   </view>
 
   <!-- 步骤2/3: 添加图片 / 编辑 - 新布局 -->
-  <view class="editing-area-new" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
+  <view class="editing-area-new" style="padding-top: {{statusBarHeight + navigationBarHeight}}px;" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
 
     <!-- 画布区域 - 根据抽屉状态动态调整高度 -->
-    <view class="canvas-area-flex" style="height: {{drawerState === 'full' ? 'calc(100vh - ' + (statusBarHeight + navigationBarHeight) + 'px)' : 'calc(100vh - ' + (statusBarHeight + navigationBarHeight + drawerHeight) + 'px)'}}">
+    <view class="canvas-area-flex" style="height: {{drawerState === 'full' ? '100%' : 'calc(100% - ' + drawerHeight + 'px)'}}">
       <!-- Loading 遮罩 -->
       <view class="loading-overlay" wx:if="{{isLoading}}">
         <view class="loading-spinner"></view>
