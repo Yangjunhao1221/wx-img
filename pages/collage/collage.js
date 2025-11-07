@@ -8,17 +8,34 @@ Page({
   // Canvas对象存储为组件属性,不放在data中(真机上canvas/ctx是只读的,不能存入data)
   _canvas: null,
   _ctx: null,
+  _updateCanvasTimer: null, // 画布更新节流定时器
+  _contentScrollTop: 0, // 内容区域滚动位置
+  _contentTouchStartY: 0, // 内容区域触摸起始Y坐标
+  _isContentAtTop: true, // 内容区域是否在顶部
 
   data: {
     // 新流程: 先选布局,再选图片
     workflowStep: 'selectLayout', // selectLayout, addImages, editing
 
     // Tab 相关（新增）
-    currentTab: 'canvas',  // 'canvas' | 'layout'
+    currentTab: 'template',  // 'poster' | 'template' | 'splice' | 'free' | 'settings'
     tabs: [
-      { id: 'canvas', name: '画布设置' },
-      { id: 'layout', name: '布局模版' }
+      { id: 'poster', name: '海报' },
+      { id: 'template', name: '模版' },
+      { id: 'splice', name: '拼接' },
+      { id: 'free', name: '自由' },
+      { id: 'settings', name: '设置' }
     ],
+
+    // 抽屉状态管理
+    drawerState: 'collapsed',  // 'collapsed' | 'half' | 'full'
+    drawerHeight: 100,  // 当前抽屉高度（从60改为100）
+    windowHeight: 0,   // 屏幕高度
+    showCollapseButton: false,  // 是否显示收起按钮
+
+    // 抽屉触摸相关
+    drawerTouchStartY: 0,
+    drawerTouchStartHeight: 0,
 
     // 自定义导航栏相关
     statusBarHeight: 0,      // 状态栏高度
@@ -158,6 +175,13 @@ Page({
 
   onLoad: function (options) {
     console.log('布局拼图页面onLoad, options:', options);
+
+    // 获取窗口高度
+    const systemInfo = wx.getSystemInfoSync();
+    this.setData({
+      windowHeight: systemInfo.windowHeight
+    });
+
     // 初始化默认画布尺寸
     this.initDefaultCanvasSize();
     // 加载所有布局模板
@@ -301,6 +325,14 @@ Page({
       loadingText: '正在加载图片...',
     }, () => {
       console.log('数据已设置，开始等待Canvas就绪');
+
+      // 传入照片时默认打开第一层抽屉（模版Tab）
+      this.setData({
+        activeTab: 'template'
+      }, () => {
+        this.expandDrawer('half');
+      });
+
       // 真机兼容：等待Canvas初始化完成
       this.waitForCanvasReady().then(() => {
         console.log('Canvas已就绪，开始加载图片信息');
@@ -3331,8 +3363,368 @@ Page({
   onTabChange (e) {
     const tabId = e.currentTarget.dataset.tabId;
     console.log('切换到Tab:', tabId);
+
+    const { drawerState } = this.data;
+
+    // 如果抽屉是收起状态，点击Tab时展开到第一层
+    if (drawerState === 'collapsed') {
+      this.expandDrawer('half');
+    }
+
     this.setData({
       currentTab: tabId
+    });
+  },
+
+  // ==================== 抽屉相关方法 ====================
+
+  // 展开抽屉
+  expandDrawer (state) {
+    const { windowHeight, statusBarHeight, navigationBarHeight } = this.data;
+    let drawerHeight = 100; // 收起时高度从60改为100
+    let showCollapseButton = false;
+
+    console.log('========== 展开抽屉 ==========');
+    console.log('目标状态:', state);
+    console.log('窗口高度:', windowHeight);
+
+    if (state === 'half') {
+      // 第一层：300px，画布被压缩（视觉上分为两个区域）
+      drawerHeight = 300;
+      showCollapseButton = true;
+    } else if (state === 'full') {
+      // 第二层：80%屏幕高度，画布恢复100%，抽屉覆盖在画布上
+      drawerHeight = windowHeight * 0.8;
+      showCollapseButton = true;
+
+      console.log('第二层抽屉高度:', drawerHeight);
+    }
+
+    console.log('抽屉高度将设置为:', drawerHeight);
+
+    this.setData({
+      drawerState: state,
+      drawerHeight: drawerHeight,
+      showCollapseButton: showCollapseButton
+    }, () => {
+      console.log('抽屉状态已更新，开始更新画布');
+      // 抽屉高度变化后，重新计算画布尺寸
+      this.updateCanvasSizeForDrawer();
+    });
+  },
+
+  // 收起抽屉
+  collapseDrawer () {
+    this.setData({
+      drawerState: 'collapsed',
+      drawerHeight: 100, // 从60改为100
+      showCollapseButton: false
+    }, () => {
+      this.updateCanvasSizeForDrawer();
+    });
+  },
+
+  // 抽屉触摸开始
+  onDrawerTouchStart (e) {
+    const touch = e.touches[0];
+    this.setData({
+      drawerTouchStartY: touch.clientY,
+      drawerTouchStartHeight: this.data.drawerHeight
+    });
+  },
+
+  // 抽屉触摸移动
+  onDrawerTouchMove (e) {
+    const touch = e.touches[0];
+    const { drawerTouchStartY, drawerTouchStartHeight, windowHeight, statusBarHeight, navigationBarHeight } = this.data;
+    const deltaY = drawerTouchStartY - touch.clientY; // 向上为正
+    const newHeight = drawerTouchStartHeight + deltaY;
+
+    // 限制高度范围
+    const minHeight = 100; // 最小高度从60改为100
+    const maxHeight = windowHeight * 0.8; // 最大高度从70%改为80%
+    const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+    // 判断当前应该是哪个状态
+    let currentState = 'collapsed';
+    if (clampedHeight >= windowHeight * 0.5) {
+      currentState = 'full'; // 超过50%屏幕高度，进入第二层
+    } else if (clampedHeight > 150) {
+      currentState = 'half'; // 第一层
+    }
+
+    console.log('========== 拖动抽屉 ==========');
+    console.log('窗口高度:', windowHeight);
+    console.log('最大高度(80%):', maxHeight);
+    console.log('原高度:', drawerTouchStartHeight, '→ 新高度:', newHeight, '→ 限制后:', clampedHeight);
+    console.log('当前状态:', currentState);
+
+    // 实时更新抽屉高度和状态
+    this.setData({
+      drawerHeight: clampedHeight,
+      drawerState: currentState
+    });
+
+    // 使用节流优化画布更新性能
+    if (this._updateCanvasTimer) {
+      clearTimeout(this._updateCanvasTimer);
+    }
+    this._updateCanvasTimer = setTimeout(() => {
+      console.log('节流触发，更新画布');
+      this.updateCanvasSizeForDrawer();
+    }, 50); // 50ms节流
+  },
+
+  // 抽屉触摸结束
+  onDrawerTouchEnd (e) {
+    const { drawerHeight, windowHeight } = this.data;
+    const halfHeight = 300;
+    const fullHeight = windowHeight * 0.8; // 从70%改为80%
+
+    console.log('抽屉触摸结束，当前高度:', drawerHeight, '半展开:', halfHeight, '全展开:', fullHeight);
+
+    // 根据当前高度判断应该停留在哪个状态
+    let targetState = 'collapsed';
+
+    if (drawerHeight < 150) {
+      // 接近收起状态
+      targetState = 'collapsed';
+    } else if (drawerHeight < (halfHeight + fullHeight) / 2) {
+      // 接近第一层
+      targetState = 'half';
+    } else {
+      // 接近第二层
+      targetState = 'full';
+    }
+
+    console.log('目标状态:', targetState);
+    this.expandDrawer(targetState);
+  },
+
+  // ==================== 内容区域智能拖动 ====================
+
+  // 内容区域滚动到顶部
+  onContentScrollToUpper (e) {
+    console.log('内容区域滚动到顶部');
+    this._isContentAtTop = true;
+  },
+
+  // 内容区域触摸开始
+  onContentTouchStart (e) {
+    const touch = e.touches[0];
+    this._contentTouchStartY = touch.clientY;
+
+    // 检查当前滚动位置
+    // 注意：scroll-view的scrollTop需要通过事件获取
+    console.log('内容区域触摸开始, Y:', touch.clientY);
+  },
+
+  // 内容区域触摸移动
+  onContentTouchMove (e) {
+    const touch = e.touches[0];
+    const deltaY = this._contentTouchStartY - touch.clientY; // 向上为正
+
+    console.log('内容区域触摸移动, deltaY:', deltaY, '是否在顶部:', this._isContentAtTop);
+
+    // 如果内容在顶部，且向上滑动，则触发抽屉展开
+    if (this._isContentAtTop && deltaY > 10) {
+      console.log('内容在顶部且向上滑动，触发抽屉拖动');
+
+      // 模拟抽屉拖动
+      const { drawerHeight, drawerTouchStartHeight, windowHeight } = this.data;
+      const newHeight = drawerHeight + deltaY * 0.5; // 减缓拖动速度
+
+      // 限制高度范围
+      const minHeight = 100; // 从60改为100
+      const maxHeight = windowHeight * 0.8; // 从70%改为80%
+
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+      // 判断当前应该是哪个状态
+      let currentState = 'collapsed';
+      if (clampedHeight >= windowHeight * 0.5) {
+        currentState = 'full';
+      } else if (clampedHeight > 150) {
+        currentState = 'half';
+      }
+
+      console.log('调整抽屉高度:', clampedHeight, '状态:', currentState);
+
+      // 实时更新抽屉高度和状态
+      this.setData({
+        drawerHeight: clampedHeight,
+        drawerState: currentState
+      });
+
+      // 使用节流优化画布更新性能
+      if (this._updateCanvasTimer) {
+        clearTimeout(this._updateCanvasTimer);
+      }
+      this._updateCanvasTimer = setTimeout(() => {
+        console.log('节流触发，更新画布');
+        this.updateCanvasSizeForDrawer();
+      }, 50); // 50ms节流
+
+      // 更新起始位置，避免跳跃
+      this._contentTouchStartY = touch.clientY;
+    } else {
+      // 内容不在顶部，或向下滑动，标记不在顶部
+      if (deltaY < 0) {
+        this._isContentAtTop = false;
+      }
+    }
+  },
+
+  // 内容区域触摸结束
+  onContentTouchEnd (e) {
+    console.log('内容区域触摸结束');
+
+    // 如果抽屉高度发生了变化，需要吸附到最近的状态
+    const { drawerHeight, windowHeight } = this.data;
+    const halfHeight = 300;
+    const fullHeight = windowHeight * 0.8; // 从70%改为80%
+
+    // 如果高度接近半展开或全展开，则吸附
+    if (drawerHeight > 150) {
+      let targetState = 'half';
+
+      if (drawerHeight > (halfHeight + fullHeight) / 2) {
+        targetState = 'full';
+      }
+
+      console.log('内容区域拖动结束，吸附到:', targetState);
+      this.expandDrawer(targetState);
+    }
+  },
+
+  // 根据抽屉状态更新画布尺寸
+  updateCanvasSizeForDrawer () {
+    const that = this;
+    const { drawerHeight, drawerState, aspectRatio, aspectRatios, statusBarHeight, navigationBarHeight } = this.data;
+
+    console.log('========== 开始更新画布尺寸 ==========');
+    console.log('当前抽屉状态:', drawerState);
+    console.log('当前抽屉高度:', drawerHeight);
+    console.log('当前画布比例:', aspectRatio);
+
+    // 获取屏幕信息
+    const windowInfo = wx.getWindowInfo();
+    const screenWidth = windowInfo.screenWidth;
+    const screenHeight = windowInfo.screenHeight;
+
+    console.log('屏幕尺寸:', screenWidth, 'x', screenHeight);
+    console.log('状态栏高度:', statusBarHeight, '导航栏高度:', navigationBarHeight);
+
+    const topBarHeight = statusBarHeight + navigationBarHeight;
+    const verticalMargin = 32; // 上下边距
+    let availableHeight;
+
+    // 根据抽屉状态决定画布高度
+    if (drawerState === 'full') {
+      // 第二层：画布恢复100%高度，抽屉覆盖在画布上
+      availableHeight = screenHeight - topBarHeight - verticalMargin;
+      console.log('第二层：画布100%高度 =', availableHeight);
+    } else {
+      // 收起/第一层：画布被压缩，抽屉在底部
+      availableHeight = screenHeight - topBarHeight - drawerHeight - verticalMargin;
+      console.log('收起/第一层：画布被压缩 =', availableHeight, '(屏幕', screenHeight, '- 顶部栏', topBarHeight, '- 抽屉', drawerHeight, '- 边距', verticalMargin, ')');
+    }
+
+    // 计算画布可用宽度
+    const horizontalMargin = 40; // 左右边距
+    const availableWidth = screenWidth - horizontalMargin;
+
+    console.log('可用空间:', availableWidth, 'x', availableHeight);
+
+    // 获取当前选择的画布比例
+    const currentRatio = aspectRatios.find(r => r.value === aspectRatio);
+    if (!currentRatio) {
+      console.error('未找到当前画布比例，aspectRatio:', aspectRatio);
+      console.error('可用的比例列表:', aspectRatios.map(r => r.value));
+      // 使用默认比例 1:1
+      const defaultRatio = aspectRatios.find(r => r.value === '1:1');
+      if (!defaultRatio) {
+        console.error('连默认比例都找不到，放弃更新');
+        return;
+      }
+      console.log('使用默认比例 1:1');
+      this.setData({ aspectRatio: '1:1' });
+      // 递归调用，使用默认比例
+      setTimeout(() => {
+        this.updateCanvasSizeForDrawer();
+      }, 0);
+      return;
+    }
+
+    const ratioWidth = currentRatio.width;
+    const ratioHeight = currentRatio.height;
+    const ratioAspect = ratioWidth / ratioHeight;
+
+    console.log('画布比例:', ratioWidth, ':', ratioHeight, '=', ratioAspect);
+
+    // 根据比例和可用空间计算画布尺寸
+    let canvasWidth, canvasHeight;
+
+    if (ratioAspect >= 1) {
+      // 横向或正方形，优先以宽度为准
+      canvasWidth = Math.min(availableWidth, 750); // 最大不超过750px
+      canvasHeight = canvasWidth / ratioAspect;
+
+      // 如果高度超出可用空间，则以高度为准重新计算
+      if (canvasHeight > availableHeight) {
+        console.log('高度超出，以高度为准重新计算');
+        canvasHeight = availableHeight;
+        canvasWidth = canvasHeight * ratioAspect;
+      }
+    } else {
+      // 纵向，优先以高度为准
+      canvasHeight = Math.min(availableHeight, availableWidth / ratioAspect);
+      canvasWidth = canvasHeight * ratioAspect;
+
+      // 如果宽度超出可用空间，则以宽度为准重新计算
+      if (canvasWidth > availableWidth) {
+        console.log('宽度超出，以宽度为准重新计算');
+        canvasWidth = availableWidth;
+        canvasHeight = canvasWidth / ratioAspect;
+      }
+    }
+
+    const newCanvasWidth = Math.floor(canvasWidth);
+    const newCanvasHeight = Math.floor(canvasHeight);
+
+    console.log('计算出的新画布尺寸:', newCanvasWidth, 'x', newCanvasHeight);
+    console.log('========== 更新画布尺寸完成 ==========');
+
+    // 更新画布尺寸
+    this.setData({
+      canvasWidth: newCanvasWidth,
+      canvasHeight: newCanvasHeight,
+    }, () => {
+      console.log('画布尺寸已更新到data');
+      // 画布尺寸更新后，重新绘制内容
+      if (that._ctx && that._canvas) {
+        // 重新设置Canvas节点的实际绘制尺寸
+        if (that._canvas) {
+          that._canvas.width = newCanvasWidth;
+          that._canvas.height = newCanvasHeight;
+          console.log('Canvas节点尺寸已更新');
+        }
+
+        // 检查是否有图片需要绘制
+        const hasImages = that.data.imageSlots && that.data.imageSlots.some(slot => !slot.isEmpty);
+
+        if (hasImages) {
+          // 有图片，重新绘制所有内容
+          console.log('抽屉调整后重新绘制Canvas（有图片）');
+          that.updateCanvas();
+        } else if (that.data.currentLayoutTemplate) {
+          // 无图片但有布局，重新绘制占位框
+          console.log('抽屉调整后重新绘制占位框');
+          that.drawPlaceholders();
+        }
+      } else {
+        console.warn('Canvas未初始化，跳过重绘');
+      }
     });
   },
 });

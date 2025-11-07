@@ -1185,11 +1185,15 @@
   overflow: hidden;
   padding-top: calc(var(--status-bar-height, 20px) + var(--navigation-bar-height, 44px));
   box-sizing: border-box;
+  position: relative;
 }
 
-/* 画布区域 - 自适应高度,占据剩余空间 */
+/* 画布区域 - 根据抽屉状态动态调整高度 */
 .canvas-area-flex {
-  flex: 1;
+  /* height 通过内联样式动态设置:
+     - 第二层(full): calc(100vh - statusBarHeight - navigationBarHeight)
+     - 其他: calc(100vh - statusBarHeight - navigationBarHeight - drawerHeight)
+  */
   background: #fbfbfd;
   display: flex;
   flex-direction: column;
@@ -1197,8 +1201,8 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
-  min-height: 0;
   padding: 16px;
+  box-sizing: border-box;
 }
 
 /* Loading 遮罩 */
@@ -1239,7 +1243,7 @@
 .fab-add-image {
   position: fixed;
   right: 20px;
-  bottom: 360px;
+  /* bottom 通过内联样式动态设置: drawerHeight + 20px */
   width: 56px;
   height: 56px;
   background: #0071e3;
@@ -1264,15 +1268,38 @@
   line-height: 1;
 }
 
-/* 底部操作区域 - 固定高度,简约风格 */
-.bottom-control-area {
-  height: 320px;
+/* 底部抽屉区域 - 动态高度,简约风格 */
+.bottom-drawer-area {
   background: #fbfbfd;
   display: flex;
   flex-direction: column;
   border-top: 1px solid #d2d2d7;
   flex-shrink: 0;
   overflow: hidden;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transition: height 0.3s ease;
+  z-index: 100;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+/* 抽屉头部 */
+.drawer-header {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 拖动手柄 */
+.drawer-handle {
+  width: 36px;
+  height: 5px;
+  background: #d2d2d7;
+  border-radius: 3px;
+  margin: 8px auto 4px;
+  flex-shrink: 0;
 }
 
 /* 简约 Tab 导航栏 - 苹果风格 */
@@ -1359,6 +1386,35 @@
   font-weight: 500;
 }
 
+/* 收起按钮 - 定位在抽屉外的右上角 */
+.collapse-button-outside {
+  position: fixed;
+  /* bottom 通过内联样式动态设置: drawerHeight + 8px */
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  transition: all 0.3s ease;
+}
+
+.collapse-button-outside:active {
+  background: #f5f5f5;
+  transform: scale(0.95);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+}
+
+.collapse-icon {
+  font-size: 16px;
+  color: #86868b;
+  line-height: 1;
+}
+
 /* Tab 内容区 - 简约风格 */
 .tab-content {
   flex: 1;
@@ -1371,6 +1427,37 @@
 .tab-panel {
   padding: 16px;
   min-height: 100%;
+}
+
+/* 占位内容 - 用于未实现的Tab */
+.placeholder-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #d2d2d7;
+}
+
+.placeholder-text {
+  font-size: 14px;
+  color: #86868b;
+  font-weight: 400;
+}
+
+/* 小标题 - 用于分组标题 */
+.section-title-small {
+  font-size: 13px;
+  color: #86868b;
+  font-weight: 500;
+  margin-bottom: 8px;
+  margin-top: 12px;
+  letter-spacing: -0.08px;
+}
+
+.section-title-small:first-child {
+  margin-top: 0;
 }
 
 /* 画布比例横向滚动 - 简约风格 */

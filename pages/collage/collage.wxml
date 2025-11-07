@@ -103,8 +103,8 @@
   <!-- 步骤2/3: 添加图片 / 编辑 - 新布局 -->
   <view class="editing-area-new" wx:if="{{workflowStep === 'addImages' || workflowStep === 'editing'}}" bindtap="onPageTap">
 
-    <!-- 画布区域 - 自适应高度 -->
-    <view class="canvas-area-flex">
+    <!-- 画布区域 - 根据抽屉状态动态调整高度 -->
+    <view class="canvas-area-flex" style="height: {{drawerState === 'full' ? 'calc(100vh - ' + (statusBarHeight + navigationBarHeight) + 'px)' : 'calc(100vh - ' + (statusBarHeight + navigationBarHeight + drawerHeight) + 'px)'}}">
       <!-- Loading 遮罩 -->
       <view class="loading-overlay" wx:if="{{isLoading}}">
         <view class="loading-spinner"></view>
@@ -126,27 +126,56 @@
 
     </view>
 
-    <!-- 底部操作区域 - 固定高度 -->
-    <view class="bottom-control-area">
-      <!-- 简约 Tab 导航栏 -->
-      <view class="tab-bar-minimal">
-        <view
-          wx:for="{{tabs}}"
-          wx:key="id"
-          class="tab-item-minimal {{currentTab === item.id ? 'active' : ''}}"
-          data-tab-id="{{item.id}}"
-          bindtap="onTabChange"
-        >
-          <text class="tab-label">{{item.name}}</text>
+    <!-- 收起按钮 - 定位在抽屉外的右上角 -->
+    <view class="collapse-button-outside" wx:if="{{showCollapseButton}}" bindtap="collapseDrawer" style="bottom: {{drawerHeight + 8}}px;">
+      <text class="collapse-icon">▼</text>
+    </view>
+
+    <!-- 底部抽屉区域 - 动态高度 -->
+    <view class="bottom-drawer-area" style="height: {{drawerHeight}}px;">
+      <!-- 抽屉头部：拖动手柄 + Tab导航栏 -->
+      <view class="drawer-header"
+            bindtouchstart="onDrawerTouchStart"
+            catchtouchmove="onDrawerTouchMove"
+            bindtouchend="onDrawerTouchEnd">
+        <!-- 拖动手柄 -->
+        <view class="drawer-handle"></view>
+
+        <!-- Tab 导航栏 -->
+        <view class="tab-bar-minimal">
+          <view
+            wx:for="{{tabs}}"
+            wx:key="id"
+            class="tab-item-minimal {{currentTab === item.id ? 'active' : ''}}"
+            data-tab-id="{{item.id}}"
+            bindtap="onTabChange"
+          >
+            <text class="tab-label">{{item.name}}</text>
+          </view>
         </view>
       </view>
 
       <!-- Tab 内容区（可滚动） -->
-      <scroll-view class="tab-content" scroll-y enhanced show-scrollbar="{{false}}">
+      <scroll-view class="tab-content"
+                   scroll-y
+                   enhanced
+                   show-scrollbar="{{false}}"
+                   bindscrolltoupper="onContentScrollToUpper"
+                   bindtouchstart="onContentTouchStart"
+                   bindtouchmove="onContentTouchMove"
+                   bindtouchend="onContentTouchEnd">
 
-        <!-- Tab 1: 画布设置 -->
-        <view wx:if="{{currentTab === 'canvas'}}" class="tab-panel">
+        <!-- Tab 1: 海报 -->
+        <view wx:if="{{currentTab === 'poster'}}" class="tab-panel">
+          <view class="placeholder-content">
+            <text class="placeholder-text">海报模版（待接入数据）</text>
+          </view>
+        </view>
+
+        <!-- Tab 2: 模版 -->
+        <view wx:if="{{currentTab === 'template'}}" class="tab-panel">
           <!-- 画布比例 -->
+          <view class="section-title-small">画布比例</view>
           <scroll-view class="ratio-scroll-horizontal" scroll-x enhanced show-scrollbar="{{false}}">
             <view class="ratio-chips">
               <view
@@ -161,6 +190,43 @@
             </view>
           </scroll-view>
 
+          <!-- 推荐布局 -->
+          <view class="section-title-small">推荐布局</view>
+          <scroll-view class="template-scroll-horizontal" scroll-x enhanced show-scrollbar="{{false}}" wx:if="{{inlineTemplates && inlineTemplates.length}}">
+            <view class="template-chips">
+              <view
+                class="template-chip {{currentLayoutTemplate && currentLayoutTemplate.name === item.name ? 'active' : ''}}"
+                wx:for="{{inlineTemplates}}"
+                wx:key="index"
+                data-index="{{index}}"
+                bindtap="onInlineTemplateSelect"
+              >
+                <view class="template-preview">
+                  <block wx:for="{{item.previewBlocks}}" wx:for-item="b" wx:key="*this">
+                    <view class="template-block" style="left: {{b.left}}%; top: {{b.top}}%; width: {{b.width}}%; height: {{b.height}}%;"></view>
+                  </block>
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+
+        <!-- Tab 3: 拼接 -->
+        <view wx:if="{{currentTab === 'splice'}}" class="tab-panel">
+          <view class="placeholder-content">
+            <text class="placeholder-text">拼接模式（待接入数据）</text>
+          </view>
+        </view>
+
+        <!-- Tab 4: 自由 -->
+        <view wx:if="{{currentTab === 'free'}}" class="tab-panel">
+          <view class="placeholder-content">
+            <text class="placeholder-text">自由模式（待接入数据）</text>
+          </view>
+        </view>
+
+        <!-- Tab 5: 设置 -->
+        <view wx:if="{{currentTab === 'settings'}}" class="tab-panel">
           <!-- 样式设置 -->
           <view class="style-controls-compact">
             <!-- 图片显示模式 -->
@@ -194,33 +260,11 @@
           </view>
         </view>
 
-        <!-- Tab 2: 布局模版 -->
-        <view wx:if="{{currentTab === 'layout'}}" class="tab-panel">
-          <!-- 推荐布局 -->
-          <scroll-view class="template-scroll-horizontal" scroll-x enhanced show-scrollbar="{{false}}" wx:if="{{inlineTemplates && inlineTemplates.length}}">
-            <view class="template-chips">
-              <view
-                class="template-chip {{currentLayoutTemplate && currentLayoutTemplate.name === item.name ? 'active' : ''}}"
-                wx:for="{{inlineTemplates}}"
-                wx:key="index"
-                data-index="{{index}}"
-                bindtap="onInlineTemplateSelect"
-              >
-                <view class="template-preview">
-                  <block wx:for="{{item.previewBlocks}}" wx:for-item="b" wx:key="*this">
-                    <view class="template-block" style="left: {{b.left}}%; top: {{b.top}}%; width: {{b.width}}%; height: {{b.height}}%;"></view>
-                  </block>
-                </view>
-              </view>
-            </view>
-          </scroll-view>
-        </view>
-
       </scroll-view>
     </view>
 
-    <!-- 悬浮添加图片按钮 -->
-    <view class="fab-add-image" bindtap="selectImages">
+    <!-- 悬浮添加图片按钮 - 动态位置 -->
+    <view class="fab-add-image" style="bottom: {{drawerHeight + 20}}px;" bindtap="selectImages">
       <text class="fab-icon">+</text>
     </view>
 
