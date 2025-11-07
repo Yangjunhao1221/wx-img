@@ -1611,3 +1611,112 @@
   background: #07c160;
   color: #fff;
 }
+
+/* ========== 海报Tab样式 ========== */
+
+/* 海报类型区域 - 固定在顶部 */
+.poster-category-section {
+  position: sticky;
+  top: 0;
+  background: #fbfbfd;
+  z-index: 10;
+  padding: 0 0 12px 0;
+  margin-bottom: 4px;
+}
+
+.poster-category-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.poster-category-tabs {
+  display: inline-flex;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.poster-category-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  background: #f5f5f7;
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+.poster-category-tab.active {
+  background: #0071e3;
+}
+
+.poster-category-name {
+  font-size: 14px;
+  color: #1d1d1f;
+  white-space: nowrap;
+}
+
+.poster-category-tab.active .poster-category-name {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* 海报网格容器 */
+.poster-grid-container {
+  flex: 1;
+  padding: 0 16px;
+}
+
+/* 加载状态 */
+.poster-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+
+.poster-loading-text {
+  font-size: 14px;
+  color: #86868b;
+}
+
+/* 海报网格 */
+.poster-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding-bottom: 20px;
+}
+
+/* 海报项 */
+.poster-item {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  aspect-ratio: 3/4;
+}
+
+.poster-item:active {
+  transform: scale(0.95);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+/* 海报图片 */
+.poster-image {
+  width: 100%;
+  height: 100%;
+  background: #f5f5f7;
+}
+
+/* 空状态 */
+.poster-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+
+.poster-empty-text {
+  font-size: 14px;
+  color: #86868b;
+}

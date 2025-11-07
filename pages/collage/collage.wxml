@@ -167,8 +167,46 @@
 
         <!-- Tab 1: 海报 -->
         <view wx:if="{{currentTab === 'poster'}}" class="tab-panel">
-          <view class="placeholder-content">
-            <text class="placeholder-text">海报模版（待接入数据）</text>
+          <!-- 海报类型Tab -->
+          <view class="poster-category-section">
+            <scroll-view class="poster-category-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+              <view class="poster-category-tabs">
+                <view wx:for="{{posterCategories}}"
+                      wx:key="id"
+                      class="poster-category-tab {{currentPosterCategory && currentPosterCategory.id === item.id ? 'active' : ''}}"
+                      data-id="{{item.id}}"
+                      bindtap="onPosterCategoryChange">
+                  <text class="poster-category-name">{{item.name}}</text>
+                </view>
+              </view>
+            </scroll-view>
+          </view>
+
+          <!-- 海报网格 -->
+          <view class="poster-grid-container">
+            <!-- 加载状态 -->
+            <view wx:if="{{loadingPosters}}" class="poster-loading">
+              <text class="poster-loading-text">加载中...</text>
+            </view>
+
+            <!-- 海报列表 -->
+            <view wx:elif="{{posterList.length > 0}}" class="poster-grid">
+              <view wx:for="{{posterList}}"
+                    wx:key="id"
+                    class="poster-item"
+                    data-index="{{index}}"
+                    bindtap="onPosterSelect">
+                <image class="poster-image"
+                       src="{{item.thumbnail.url}}"
+                       mode="aspectFill"
+                       lazy-load="{{true}}"/>
+              </view>
+            </view>
+
+            <!-- 空状态 -->
+            <view wx:else class="poster-empty">
+              <text class="poster-empty-text">暂无海报</text>
+            </view>
           </view>
         </view>
 

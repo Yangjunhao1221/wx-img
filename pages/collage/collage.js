@@ -3,6 +3,7 @@ const { getLayoutTemplates } = require('../../utils/layoutTemplates.js');
 const {
   calculateLayout, getRecommendedLayout, validateLayout,
 } = require('../../utils/layoutCalculator.js');
+const { getPosterCategories, getPostersByCategory } = require('../../utils/apiUtils.js');
 
 Page({
   // Canvas对象存储为组件属性,不放在data中(真机上canvas/ctx是只读的,不能存入data)
@@ -171,6 +172,13 @@ Page({
     toolbarPosition: { x: 0, y: 0 }, // 工具条位置
     imageScale: {}, // 每张图片的缩放比例 {index: scale}
     imageRotation: {}, // 每张图片的旋转角度 {index: angle}
+
+    // 海报相关
+    posterCategories: [], // 海报类型列表
+    currentPosterCategory: null, // 当前选中的类型
+    posterList: [], // 当前类型下的海报列表
+    loadingPosters: false, // 加载海报状态
+    backgroundPosterUrl: '', // 背景海报URL
   },
 
   onLoad: function (options) {
@@ -186,6 +194,8 @@ Page({
     this.initDefaultCanvasSize();
     // 加载所有布局模板
     this.loadAllLayoutTemplates();
+    // 加载海报类型列表
+    this.loadPosterCategories();
 
     // 真机兼容方案：优先从全局数据读取，兜底用eventChannel
     const fromIndex = options && options.fromIndex === '1';
@@ -1108,7 +1118,7 @@ Page({
 
     const {
       canvasWidth, canvasHeight, spacing, cornerRadius,
-      backgroundColor,
+      backgroundColor, backgroundPosterUrl,
     } = this.data;
 
     // 清空画布
@@ -1135,57 +1145,70 @@ Page({
       imagePositions: imagePositions,
     });
 
-    // 绘制每个槽位
-    const drawPromises = imageSlots.map((slot, index) => {
-      if (index >= imagePositions.length) {
-        return Promise.resolve();
-      }
+    // 定义绘制槽位的函数
+    const drawSlots = () => {
+      // 绘制每个槽位
+      const slotPromises = imageSlots.map((slot, index) => {
+        if (index >= imagePositions.length) {
+          return Promise.resolve();
+        }
 
-      const pos = imagePositions[index];
+        const pos = imagePositions[index];
 
-      if (slot.isEmpty) {
-        // 绘制占位框
-        return new Promise((resolve) => {
-          // 绘制边框
-          ctx.strokeStyle = '#CCCCCC';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5, 5]);
-          ctx.strokeRect(pos.x, pos.y, pos.width, pos.height);
-          ctx.setLineDash([]);
+        if (slot.isEmpty) {
+          // 绘制占位框
+          return new Promise((resolve) => {
+            // 绘制边框
+            ctx.strokeStyle = '#CCCCCC';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(pos.x, pos.y, pos.width, pos.height);
+            ctx.setLineDash([]);
 
-          // 绘制背景
-          ctx.fillStyle = '#F5F5F5';
-          ctx.fillRect(pos.x, pos.y, pos.width, pos.height);
+            // 绘制背景
+            ctx.fillStyle = '#F5F5F5';
+            ctx.fillRect(pos.x, pos.y, pos.width, pos.height);
 
-          // 绘制+号
-          const centerX = pos.x + pos.width / 2;
-          const centerY = pos.y + pos.height / 2;
-          const plusSize = Math.min(pos.width, pos.height) * 0.15;
+            // 绘制+号
+            const centerX = pos.x + pos.width / 2;
+            const centerY = pos.y + pos.height / 2;
+            const plusSize = Math.min(pos.width, pos.height) * 0.15;
 
-          ctx.strokeStyle = '#999999';
-          ctx.lineWidth = 2;
+            ctx.strokeStyle = '#999999';
+            ctx.lineWidth = 2;
 
-          ctx.beginPath();
-          ctx.moveTo(centerX - plusSize, centerY);
-          ctx.lineTo(centerX + plusSize, centerY);
-          ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(centerX - plusSize, centerY);
+            ctx.lineTo(centerX + plusSize, centerY);
+            ctx.stroke();
 
-          ctx.beginPath();
-          ctx.moveTo(centerX, centerY - plusSize);
-          ctx.lineTo(centerX, centerY + plusSize);
-          ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - plusSize);
+            ctx.lineTo(centerX, centerY + plusSize);
+            ctx.stroke();
 
-          resolve();
-        });
-      } else {
-        // 绘制图片
-        console.log(`绘制槽位${index}的图片:`, slot.image.path);
-        return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height, index);
-      }
-    });
+            resolve();
+          });
+        } else {
+          // 绘制图片
+          console.log(`绘制槽位${index}的图片:`, slot.image.path);
+          return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height, index);
+        }
+      });
+
+      return Promise.all(slotPromises);
+    };
+
+    // 如果有背景海报，先绘制背景海报，再绘制槽位
+    const drawPromise = backgroundPosterUrl
+      ? this.drawBackgroundPoster(ctx, backgroundPosterUrl, canvasWidth, canvasHeight).then(() => {
+        console.log('背景海报绘制完成，开始绘制槽位');
+        return drawSlots();
+      })
+      : drawSlots();
 
     // 等待所有图片绘制完成
-    Promise.all(drawPromises).then(() => {
+    drawPromise.then(() => {
       console.log('所有图片绘制完成');
 
       // 添加水印
@@ -3725,6 +3748,197 @@ Page({
       } else {
         console.warn('Canvas未初始化，跳过重绘');
       }
+    });
+  },
+
+  // ==================== 海报相关方法 ====================
+
+  /**
+   * 绘制背景海报
+   * @param {Object} ctx Canvas上下文
+   * @param {String} posterUrl 海报图片URL
+   * @param {Number} canvasWidth 画布宽度
+   * @param {Number} canvasHeight 画布高度
+   * @returns {Promise} 绘制完成的Promise
+   */
+  drawBackgroundPoster (ctx, posterUrl, canvasWidth, canvasHeight) {
+    return new Promise((resolve, reject) => {
+      const canvas = this._canvas;
+      if (!canvas) {
+        console.error('Canvas未初始化');
+        reject(new Error('Canvas未初始化'));
+        return;
+      }
+
+      // 创建图片对象
+      const img = canvas.createImage();
+
+      img.onload = () => {
+        console.log('背景海报加载成功');
+
+        // 保存当前状态
+        ctx.save();
+
+        // 计算图片绘制尺寸（填充整个画布）
+        const imgRatio = img.width / img.height;
+        const canvasRatio = canvasWidth / canvasHeight;
+
+        let drawWidth, drawHeight, drawX, drawY;
+
+        if (imgRatio > canvasRatio) {
+          // 图片更宽，以高度为准
+          drawHeight = canvasHeight;
+          drawWidth = drawHeight * imgRatio;
+          drawX = (canvasWidth - drawWidth) / 2;
+          drawY = 0;
+        } else {
+          // 图片更高，以宽度为准
+          drawWidth = canvasWidth;
+          drawHeight = drawWidth / imgRatio;
+          drawX = 0;
+          drawY = (canvasHeight - drawHeight) / 2;
+        }
+
+        // 绘制背景图片
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+        // 恢复状态
+        ctx.restore();
+
+        console.log('背景海报绘制完成');
+        resolve();
+      };
+
+      img.onerror = (err) => {
+        console.error('背景海报加载失败:', err);
+        reject(err);
+      };
+
+      // 设置图片源
+      img.src = posterUrl;
+    });
+  },
+
+  /**
+   * 加载海报类型列表
+   */
+  loadPosterCategories () {
+    console.log('开始加载海报类型列表');
+    this.setData({ loadingPosters: true });
+
+    getPosterCategories()
+      .then(categories => {
+        console.log('海报类型列表加载成功:', categories);
+
+        if (categories && categories.length > 0) {
+          // 默认选中第一个类型
+          const firstCategory = categories[0];
+          this.setData({
+            posterCategories: categories,
+            currentPosterCategory: firstCategory,
+            loadingPosters: false
+          });
+
+          // 加载第一个类型的海报
+          this.loadPostersByCategory(firstCategory.id);
+        } else {
+          this.setData({ loadingPosters: false });
+          wx.showToast({
+            title: '暂无海报类型',
+            icon: 'none'
+          });
+        }
+      })
+      .catch(err => {
+        console.error('加载海报类型失败:', err);
+        this.setData({ loadingPosters: false });
+        wx.showToast({
+          title: '加载失败，请重试',
+          icon: 'none'
+        });
+      });
+  },
+
+  /**
+   * 加载指定类型的海报列表
+   * @param {Number} categoryId 类型ID
+   */
+  loadPostersByCategory (categoryId) {
+    console.log('加载类型海报:', categoryId);
+    this.setData({ loadingPosters: true });
+
+    getPostersByCategory(categoryId)
+      .then(result => {
+        console.log('海报列表加载成功:', result);
+        this.setData({
+          posterList: result.materials || [],
+          loadingPosters: false
+        });
+      })
+      .catch(err => {
+        console.error('加载海报列表失败:', err);
+        this.setData({ loadingPosters: false });
+        wx.showToast({
+          title: '加载失败，请重试',
+          icon: 'none'
+        });
+      });
+  },
+
+  /**
+   * 切换海报类型
+   * @param {Object} e 事件对象
+   */
+  onPosterCategoryChange (e) {
+    const categoryId = parseInt(e.currentTarget.dataset.id);
+    const category = this.data.posterCategories.find(c => c.id === categoryId);
+
+    if (!category) {
+      console.error('未找到类型:', categoryId);
+      return;
+    }
+
+    console.log('切换海报类型:', category);
+    this.setData({
+      currentPosterCategory: category,
+      posterList: [] // 清空当前列表
+    });
+
+    // 加载新类型的海报
+    this.loadPostersByCategory(categoryId);
+  },
+
+  /**
+   * 选择海报作为背景
+   * @param {Object} e 事件对象
+   */
+  onPosterSelect (e) {
+    const index = parseInt(e.currentTarget.dataset.index);
+    const poster = this.data.posterList[index];
+
+    if (!poster || !poster.thumbnail || !poster.thumbnail.url) {
+      console.error('海报数据无效:', poster);
+      wx.showToast({
+        title: '海报数据无效',
+        icon: 'none'
+      });
+      return;
+    }
+
+    console.log('选择海报:', poster);
+
+    // 设置背景海报URL
+    this.setData({
+      backgroundPosterUrl: poster.thumbnail.url
+    });
+
+    // 重新绘制画布
+    this.updateCanvas();
+
+    wx.showToast({
+      title: '背景已设置',
+      icon: 'success',
+      duration: 1500
     });
   },
 });
