@@ -19,7 +19,7 @@ const COMMON_PARAMS = {
  * 生成唯一请求ID
  * 格式: 时间戳_随机数
  */
-function generateRequestUniqueId() {
+function generateRequestUniqueId () {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 1000000);
   return `${timestamp}_${random}`;
@@ -30,7 +30,7 @@ function generateRequestUniqueId() {
  * @param {Object} options 请求配置
  * @returns {Promise}
  */
-function request(options) {
+function request (options) {
   return new Promise((resolve, reject) => {
     const {
       url,
@@ -39,6 +39,8 @@ function request(options) {
       header = {},
       timeout = 10000
     } = options;
+
+    console.log('发起请求:', url);
 
     wx.request({
       url,
@@ -50,18 +52,39 @@ function request(options) {
       },
       timeout,
       success: (res) => {
+        console.log('请求成功:', url, res);
         if (res.statusCode === 200) {
           if (res.data && res.data.code === 0) {
             resolve(res.data.data);
           } else {
-            reject(new Error(res.data?.message || '请求失败'));
+            const errorMsg = res.data?.message || '请求失败';
+            console.error('接口返回错误:', errorMsg, res.data);
+            reject(new Error(errorMsg));
           }
         } else {
-          reject(new Error(`HTTP ${res.statusCode}`));
+          const errorMsg = `HTTP ${res.statusCode}`;
+          console.error('HTTP错误:', errorMsg, res);
+          reject(new Error(errorMsg));
         }
       },
       fail: (err) => {
-        reject(err);
+        console.error('请求失败:', url, err);
+        // 提供更详细的错误信息
+        let errorMsg = '网络请求失败';
+        if (err.errMsg) {
+          if (err.errMsg.includes('request:fail')) {
+            if (err.errMsg.includes('domain list')) {
+              errorMsg = '域名未配置到白名单，请在微信公众平台配置 https://webapi.designkit.com';
+            } else if (err.errMsg.includes('timeout')) {
+              errorMsg = '请求超时，请检查网络连接';
+            } else if (err.errMsg.includes('ssl')) {
+              errorMsg = 'SSL证书验证失败';
+            } else {
+              errorMsg = err.errMsg;
+            }
+          }
+        }
+        reject(new Error(errorMsg));
       }
     });
   });
@@ -71,7 +94,7 @@ function request(options) {
  * 获取海报类型列表
  * @returns {Promise<Array>} 类型列表
  */
-function getPosterCategories() {
+function getPosterCategories () {
   const url = `${BASE_URL}/category/list`;
   const params = {
     ...COMMON_PARAMS,
@@ -101,7 +124,7 @@ function getPosterCategories() {
  * @param {String} cursor 分页游标
  * @returns {Promise<Object>} 海报列表数据
  */
-function getPostersByCategory(categoryId, count = 50, cursor = '') {
+function getPostersByCategory (categoryId, count = 50, cursor = '') {
   const url = `${BASE_URL}/category/materials`;
   const params = {
     ...COMMON_PARAMS,

@@ -3852,9 +3852,13 @@ Page({
       .catch(err => {
         console.error('加载海报类型失败:', err);
         this.setData({ loadingPosters: false });
+
+        // 显示详细错误信息
+        const errorMsg = err.message || '加载失败，请重试';
         wx.showToast({
-          title: '加载失败，请重试',
-          icon: 'none'
+          title: errorMsg,
+          icon: 'none',
+          duration: 3000
         });
       });
   },
@@ -3878,9 +3882,13 @@ Page({
       .catch(err => {
         console.error('加载海报列表失败:', err);
         this.setData({ loadingPosters: false });
+
+        // 显示详细错误信息
+        const errorMsg = err.message || '加载失败，请重试';
         wx.showToast({
-          title: '加载失败，请重试',
-          icon: 'none'
+          title: errorMsg,
+          icon: 'none',
+          duration: 3000
         });
       });
   },
