@@ -13,6 +13,24 @@ Page({
   _contentScrollTop: 0, // 内容区域滚动位置
   _contentTouchStartY: 0, // 内容区域触摸起始Y坐标
   _isContentAtTop: true, // 内容区域是否在顶部
+  _drawPending: false, // 是否有待绘制的请求
+  _rafId: null, // requestAnimationFrame ID
+
+  // 手势相关
+  _gestureStartDistance: 0, // 双指起始距离
+  _gestureStartAngle: 0, // 双指起始角度
+  _gestureStartScale: 1.0, // 手势开始时的缩放比例
+  _gestureStartRotation: 0, // 手势开始时的旋转角度
+  _gestureImageIndex: -1, // 正在进行手势操作的图片索引
+
+  // 图片缓存系统
+  _imageCache: {}, // 图片对象缓存 { imagePath: Image对象 }
+  _imageCacheStatus: {}, // 图片缓存状态 { imagePath: 'loading' | 'loaded' | 'error' }
+  _isGestureDrawing: false, // 是否正在进行手势绘制
+
+  // 实时状态缓存（避免频繁setData，用于手势操作）
+  _realtimeImageScale: [], // 实时缩放值
+  _realtimeImageRotation: [], // 实时旋转值
 
   data: {
     // 新流程: 先选布局,再选图片
@@ -170,8 +188,8 @@ Page({
     showImageToolbar: false, // 是否显示图片工具条
     toolbarImageIndex: -1, // 工具条对应的图片索引
     toolbarPosition: { x: 0, y: 0 }, // 工具条位置
-    imageScale: {}, // 每张图片的缩放比例 {index: scale}
-    imageRotation: {}, // 每张图片的旋转角度 {index: angle}
+    imageScale: [], // ✅ 每张图片的缩放比例（数组）
+    imageRotation: [], // ✅ 每张图片的旋转角度（数组）
 
     // 海报相关
     posterCategories: [], // 海报类型列表
@@ -323,6 +341,18 @@ Page({
       }
     }
 
+    // ✅ 初始化imageScale和imageRotation数组
+    const imageScale = [];
+    const imageRotation = [];
+    for (let i = 0; i < (template ? template.imageCount : count); i++) {
+      imageScale[i] = 1.0;
+      imageRotation[i] = 0;
+    }
+
+    // ✅ 同时初始化实时缓存
+    this._realtimeImageScale = [...imageScale];
+    this._realtimeImageRotation = [...imageRotation];
+
     // 设置数据并显示 Loading
     this.setData({
       selectedImages,
@@ -333,6 +363,8 @@ Page({
       workflowStep: 'editing',
       isLoading: true,
       loadingText: '正在加载图片...',
+      imageScale: imageScale, // ✅ 初始化缩放数组
+      imageRotation: imageRotation, // ✅ 初始化旋转数组
     }, () => {
       console.log('数据已设置，开始等待Canvas就绪');
 
@@ -1027,12 +1059,13 @@ Page({
     canvas.width = width * dpr;
     canvas.height = height * dpr;
 
-    // 获取绘图上下文并设置缩放
-    const ctx = this._ctx;
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-      console.log('Canvas上下文已缩放');
-    }
+    // ✅ 重新获取绘图上下文（避免缩放累积）
+    const ctx = canvas.getContext('2d');
+    this._ctx = ctx;
+
+    // ✅ 使用setTransform重置并设置缩放（避免累积）
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    console.log('Canvas上下文已重置并缩放');
 
     if (callback) {
       callback();
@@ -1078,17 +1111,36 @@ Page({
     this.updateCanvas();
   },
 
-  // 更新画布 - 新流程
+  // 更新画布 - 新流程（带防抖优化）
   updateCanvas () {
+    // 如果已经有待绘制的请求，取消之前的 RAF
+    if (this._rafId) {
+      if (this._canvas && this._canvas.cancelAnimationFrame) {
+        this._canvas.cancelAnimationFrame(this._rafId);
+      }
+      this._rafId = null;
+    }
+
+    // 使用 requestAnimationFrame 优化绘制
+    if (this._canvas && this._canvas.requestAnimationFrame) {
+      this._rafId = this._canvas.requestAnimationFrame(() => {
+        this._performCanvasDraw();
+        this._rafId = null;
+      });
+    } else {
+      // 降级方案：直接绘制
+      this._performCanvasDraw();
+    }
+  },
+
+  // 实际执行画布绘制的方法
+  _performCanvasDraw () {
+    const that = this;
     const ctx = this._ctx;
     const canvas = this._canvas;
     const { currentLayoutTemplate, imageSlots } = this.data;
 
-    console.log('updateCanvas被调用');
-    console.log('ctx存在:', !!ctx);
-    console.log('canvas存在:', !!canvas);
-    console.log('currentLayoutTemplate存在:', !!currentLayoutTemplate);
-    console.log('imageSlots:', imageSlots);
+    console.log('_performCanvasDraw被调用');
 
     if (!currentLayoutTemplate) {
       console.log('布局未初始化');
@@ -1107,12 +1159,11 @@ Page({
 
     // 检查是否有图片
     const hasImages = imageSlots && imageSlots.some(slot => !slot.isEmpty);
-    console.log('hasImages:', hasImages);
 
     if (!hasImages) {
       // 没有图片,绘制占位框
       console.log('没有图片,绘制占位框');
-      this.drawPlaceholders();
+      this._drawPlaceholdersInternal();
       return;
     }
 
@@ -1121,114 +1172,125 @@ Page({
       backgroundColor, backgroundPosterUrl,
     } = this.data;
 
-    // 清空画布
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    // ✅ 先预加载所有图片到缓存
+    console.log('开始预加载所有图片...');
+    this._preloadAllImages().then(() => {
+      console.log('所有图片预加载完成，开始绘制');
 
-    // 设置背景
-    ctx.fillStyle = backgroundColor;
-    this.roundRect(ctx, 0, 0, canvasWidth, canvasHeight, cornerRadius);
-    ctx.fill();
+      // 所有图片加载完成后，再清空画布（避免白屏）
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    console.log('绘制图片, 布局:', currentLayoutTemplate.name);
+      // 设置背景
+      ctx.fillStyle = backgroundColor;
+      this.roundRect(ctx, 0, 0, canvasWidth, canvasHeight, cornerRadius);
+      ctx.fill();
 
-    // 使用新的布局计算系统
-    const imagePositions = calculateLayout(
-      currentLayoutTemplate,
-      canvasWidth,
-      canvasHeight,
-      spacing,
-      currentLayoutTemplate.imageCount,
-    );
+      console.log('绘制图片, 布局:', currentLayoutTemplate.name);
 
-    // 更新图片位置信息
-    this.setData({
-      imagePositions: imagePositions,
-    });
+      // 使用新的布局计算系统
+      const imagePositions = calculateLayout(
+        currentLayoutTemplate,
+        canvasWidth,
+        canvasHeight,
+        spacing,
+        currentLayoutTemplate.imageCount,
+      );
 
-    // 定义绘制槽位的函数
-    const drawSlots = () => {
-      // 绘制每个槽位
-      const slotPromises = imageSlots.map((slot, index) => {
-        if (index >= imagePositions.length) {
-          return Promise.resolve();
-        }
+      // 更新图片位置信息（不触发重绘）
+      this.data.imagePositions = imagePositions;
 
-        const pos = imagePositions[index];
+      // 定义绘制槽位的函数
+      const drawSlots = () => {
+        // 绘制每个槽位
+        const slotPromises = imageSlots.map((slot, index) => {
+          if (index >= imagePositions.length) {
+            return Promise.resolve();
+          }
 
-        if (slot.isEmpty) {
-          // 绘制占位框
-          return new Promise((resolve) => {
-            // 绘制边框
-            ctx.strokeStyle = '#CCCCCC';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(pos.x, pos.y, pos.width, pos.height);
-            ctx.setLineDash([]);
+          const pos = imagePositions[index];
 
-            // 绘制背景
-            ctx.fillStyle = '#F5F5F5';
-            ctx.fillRect(pos.x, pos.y, pos.width, pos.height);
+          if (slot.isEmpty) {
+            // 绘制占位框
+            return new Promise((resolve) => {
+              // 绘制边框
+              ctx.strokeStyle = '#CCCCCC';
+              ctx.lineWidth = 2;
+              ctx.setLineDash([5, 5]);
+              ctx.strokeRect(pos.x, pos.y, pos.width, pos.height);
+              ctx.setLineDash([]);
 
-            // 绘制+号
-            const centerX = pos.x + pos.width / 2;
-            const centerY = pos.y + pos.height / 2;
-            const plusSize = Math.min(pos.width, pos.height) * 0.15;
+              // 绘制背景
+              ctx.fillStyle = '#F5F5F5';
+              ctx.fillRect(pos.x, pos.y, pos.width, pos.height);
 
-            ctx.strokeStyle = '#999999';
-            ctx.lineWidth = 2;
+              // 绘制+号
+              const centerX = pos.x + pos.width / 2;
+              const centerY = pos.y + pos.height / 2;
+              const plusSize = Math.min(pos.width, pos.height) * 0.15;
 
-            ctx.beginPath();
-            ctx.moveTo(centerX - plusSize, centerY);
-            ctx.lineTo(centerX + plusSize, centerY);
-            ctx.stroke();
+              ctx.strokeStyle = '#999999';
+              ctx.lineWidth = 2;
 
-            ctx.beginPath();
-            ctx.moveTo(centerX, centerY - plusSize);
-            ctx.lineTo(centerX, centerY + plusSize);
-            ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(centerX - plusSize, centerY);
+              ctx.lineTo(centerX + plusSize, centerY);
+              ctx.stroke();
 
-            resolve();
-          });
-        } else {
-          // 绘制图片
-          console.log(`绘制槽位${index}的图片:`, slot.image.path);
-          return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height, index);
-        }
-      });
+              ctx.beginPath();
+              ctx.moveTo(centerX, centerY - plusSize);
+              ctx.lineTo(centerX, centerY + plusSize);
+              ctx.stroke();
 
-      return Promise.all(slotPromises);
-    };
-
-    // 如果有背景海报，先绘制背景海报，再绘制槽位
-    const drawPromise = backgroundPosterUrl
-      ? this.drawBackgroundPoster(ctx, backgroundPosterUrl, canvasWidth, canvasHeight).then(() => {
-        console.log('背景海报绘制完成，开始绘制槽位');
-        return drawSlots();
-      })
-      : drawSlots();
-
-    // 等待所有图片绘制完成
-    drawPromise.then(() => {
-      console.log('所有图片绘制完成');
-
-      // 添加水印
-      if (this.data.enableWatermark && this.data.watermarkText) {
-        this.addWatermark();
-      }
-      // 绘制编辑元素
-      this.drawEditElements();
-
-      // 强制刷新Canvas显示 - 使用requestAnimationFrame
-      if (canvas) {
-        // 触发Canvas重绘
-        canvas.requestAnimationFrame(() => {
-          console.log('Canvas重绘完成');
+              resolve();
+            });
+          } else {
+            // 绘制图片
+            console.log(`绘制槽位${index}的图片:`, slot.image.path);
+            return this.loadAndDrawImage(slot.image.path, pos.x, pos.y, pos.width, pos.height, index);
+          }
         });
-      }
 
-      // 拖拽优化：绘制完成后不需要额外缓存
+        return Promise.all(slotPromises);
+      };
+
+      // 如果有背景海报，先绘制背景海报，再绘制槽位
+      const drawPromise = backgroundPosterUrl
+        ? this.drawBackgroundPoster(ctx, backgroundPosterUrl, canvasWidth, canvasHeight).then(() => {
+          console.log('背景海报绘制完成，开始绘制槽位');
+          return drawSlots();
+        })
+        : drawSlots();
+
+      // 等待所有图片绘制完成
+      drawPromise.then(() => {
+        console.log('所有图片绘制完成');
+
+        // 添加水印
+        if (this.data.enableWatermark && this.data.watermarkText) {
+          this.addWatermark();
+        }
+        // 绘制编辑元素
+        this.drawEditElements();
+
+        // 强制刷新Canvas显示 - 使用requestAnimationFrame
+        if (canvas) {
+          // 触发Canvas重绘
+          canvas.requestAnimationFrame(() => {
+            console.log('Canvas重绘完成');
+          });
+        }
+
+        // 拖拽优化：绘制完成后不需要额外缓存
+      }).catch(err => {
+        console.error('绘制图片失败:', err);
+      });
     }).catch(err => {
-      console.error('绘制图片失败:', err);
+      console.error('预加载图片失败:', err);
+      // 即使预加载失败，也尝试绘制
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx.fillStyle = backgroundColor;
+      that.roundRect(ctx, 0, 0, canvasWidth, canvasHeight, cornerRadius);
+      ctx.fill();
     });
   },
 
@@ -1237,19 +1299,34 @@ Page({
     this.updateCanvas();
   },
 
-  // 绘制占位框 - 新流程
+  // 绘制占位框 - 新流程（公共接口）
   drawPlaceholders () {
+    // 使用 requestAnimationFrame 优化
+    if (this._rafId) {
+      if (this._canvas && this._canvas.cancelAnimationFrame) {
+        this._canvas.cancelAnimationFrame(this._rafId);
+      }
+      this._rafId = null;
+    }
+
+    if (this._canvas && this._canvas.requestAnimationFrame) {
+      this._rafId = this._canvas.requestAnimationFrame(() => {
+        this._drawPlaceholdersInternal();
+        this._rafId = null;
+      });
+    } else {
+      this._drawPlaceholdersInternal();
+    }
+  },
+
+  // 绘制占位框 - 内部实现
+  _drawPlaceholdersInternal () {
     const ctx = this._ctx;
     const canvas = this._canvas;
     const {
       canvasWidth, canvasHeight, spacing,
       currentLayoutTemplate,
     } = this.data;
-
-    console.log('drawPlaceholders被调用');
-    console.log('ctx存在:', !!ctx);
-    console.log('canvas存在:', !!canvas);
-    console.log('currentLayoutTemplate存在:', !!currentLayoutTemplate);
 
     if (!ctx || !currentLayoutTemplate) {
       console.error('Canvas或布局模板未初始化,无法绘制占位框');
@@ -1271,10 +1348,8 @@ Page({
       currentLayoutTemplate.imageCount,
     );
 
-    // 保存位置信息
-    this.setData({
-      imagePositions: positions,
-    });
+    // 保存位置信息（不触发重绘）
+    this.data.imagePositions = positions;
 
     // 绘制每个占位框
     positions.forEach((pos, index) => {
@@ -1482,118 +1557,124 @@ Page({
     ctx.restore();
   },
 
-  // 加载并绘制图片
+  // 加载并绘制图片（使用缓存）
   loadAndDrawImage (imagePath, x, y, width, height, imageIndex) {
     const that = this;
     const ctx = this._ctx;
-    const canvas = this._canvas;
     const {
       cornerRadius, imageScale, imageRotation,
     } = this.data;
 
-    console.log('开始加载图片:', imagePath);
+    console.log('开始绘制图片（使用缓存）:', imagePath);
 
-    return new Promise((resolve) => {
-      if (!canvas) {
-        console.error('Canvas对象不存在,无法加载图片');
-        resolve();
+    // 使用缓存加载图片
+    return this._loadAndCacheImage(imagePath).then((img) => {
+      if (!img) {
+        console.error('图片加载失败:', imagePath);
         return;
       }
 
-      // 创建图片对象
-      const img = canvas.createImage();
+      try {
+        console.log('从缓存绘制图片:', imagePath);
 
-      img.onload = () => {
-        try {
-          console.log('图片加载成功,开始绘制:', imagePath);
+        // 保存当前状态
+        ctx.save();
 
-          // 保存当前状态
-          ctx.save();
+        // ✅ 启用高质量图像渲染
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
-          // 获取该图片的缩放和旋转参数
-          const scale = (imageIndex !== undefined && imageScale[imageIndex]) ? imageScale[imageIndex] : 1.0;
-          const rotation = (imageIndex !== undefined && imageRotation[imageIndex]) ? imageRotation[imageIndex] : 0;
+        // ✅ 获取该图片的缩放和旋转参数（优先使用实时缓存，避免data被重置）
+        let scale = 1.0;
+        let rotation = 0;
 
-          // 先创建圆角裁剪路径（在变换之前），确保图片不会超出容器
-          that.roundRect(ctx, x, y, width, height, cornerRadius);
-          ctx.clip();
-
-          // 计算中心点
-          const centerX = x + width / 2;
-          const centerY = y + height / 2;
-
-          // 应用旋转和缩放变换（在裁剪之后）
-          if (rotation !== 0 || scale !== 1.0) {
-            ctx.translate(centerX, centerY);
-            if (rotation !== 0) {
-              ctx.rotate(rotation * Math.PI / 180);
-            }
-            if (scale !== 1.0) {
-              ctx.scale(scale, scale);
-            }
-            ctx.translate(-centerX, -centerY);
+        if (imageIndex !== undefined) {
+          // 优先使用实时缓存（手势操作时的值）
+          if (this._realtimeImageScale && this._realtimeImageScale[imageIndex] !== undefined) {
+            scale = this._realtimeImageScale[imageIndex];
+          } else if (imageScale && imageScale[imageIndex] !== undefined) {
+            // 降级使用data中的值
+            scale = imageScale[imageIndex];
           }
 
-          // 计算图片在容器中的显示尺寸和位置
-          const imgRatio = img.width / img.height;
-          const containerRatio = width / height;
-          const fitMode = that.data.imageFitMode; // 'cover' 或 'contain'
-
-          let drawWidth, drawHeight, drawX, drawY;
-
-          if (fitMode === 'cover') {
-            // cover模式: 填满容器,可能裁剪图片
-            if (imgRatio > containerRatio) {
-              // 图片比容器宽,以容器高度为准
-              drawHeight = height;
-              drawWidth = height * imgRatio;
-              drawX = x + (width - drawWidth) / 2;
-              drawY = y;
-            } else {
-              // 图片比容器窄,以容器宽度为准
-              drawWidth = width;
-              drawHeight = width / imgRatio;
-              drawX = x;
-              drawY = y + (height - drawHeight) / 2;
-            }
-          } else {
-            // contain模式: 完全显示图片,可能有留白
-            if (imgRatio > containerRatio) {
-              // 图片比容器宽,以容器宽度为准
-              drawWidth = width;
-              drawHeight = width / imgRatio;
-              drawX = x;
-              drawY = y + (height - drawHeight) / 2;
-            } else {
-              // 图片比容器窄,以容器高度为准
-              drawHeight = height;
-              drawWidth = height * imgRatio;
-              drawX = x + (width - drawWidth) / 2;
-              drawY = y;
-            }
+          if (this._realtimeImageRotation && this._realtimeImageRotation[imageIndex] !== undefined) {
+            rotation = this._realtimeImageRotation[imageIndex];
+          } else if (imageRotation && imageRotation[imageIndex] !== undefined) {
+            rotation = imageRotation[imageIndex];
           }
-
-          // 绘制图片对象
-          ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-
-          // 恢复状态
-          ctx.restore();
-
-          console.log('图片绘制完成, 模式:', fitMode, '缩放:', scale, '旋转:', rotation);
-          resolve();
-        } catch (error) {
-          console.error('绘制图片失败:', error);
-          resolve();
         }
-      };
 
-      img.onerror = (err) => {
-        console.error('图片加载失败:', imagePath, err);
-        resolve();
-      };
+        // 先创建圆角裁剪路径（在变换之前），确保图片不会超出容器
+        that.roundRect(ctx, x, y, width, height, cornerRadius);
+        ctx.clip();
 
-      // 设置图片源
-      img.src = imagePath;
+        // 计算中心点
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+
+        // 应用旋转和缩放变换（在裁剪之后）
+        if (rotation !== 0 || scale !== 1.0) {
+          ctx.translate(centerX, centerY);
+          if (rotation !== 0) {
+            ctx.rotate(rotation * Math.PI / 180);
+          }
+          if (scale !== 1.0) {
+            ctx.scale(scale, scale);
+          }
+          ctx.translate(-centerX, -centerY);
+        }
+
+        // 计算图片在容器中的显示尺寸和位置
+        const imgRatio = img.width / img.height;
+        const containerRatio = width / height;
+        const fitMode = that.data.imageFitMode; // 'cover' 或 'contain'
+
+        let drawWidth, drawHeight, drawX, drawY;
+
+        if (fitMode === 'cover') {
+          // cover模式: 填满容器,可能裁剪图片
+          if (imgRatio > containerRatio) {
+            // 图片比容器宽,以容器高度为准
+            drawHeight = height;
+            drawWidth = height * imgRatio;
+            drawX = x + (width - drawWidth) / 2;
+            drawY = y;
+          } else {
+            // 图片比容器窄,以容器宽度为准
+            drawWidth = width;
+            drawHeight = width / imgRatio;
+            drawX = x;
+            drawY = y + (height - drawHeight) / 2;
+          }
+        } else {
+          // contain模式: 完全显示图片,可能有留白
+          if (imgRatio > containerRatio) {
+            // 图片比容器宽,以容器宽度为准
+            drawWidth = width;
+            drawHeight = width / imgRatio;
+            drawX = x;
+            drawY = y + (height - drawHeight) / 2;
+          } else {
+            // 图片比容器窄,以容器高度为准
+            drawHeight = height;
+            drawWidth = height * imgRatio;
+            drawX = x + (width - drawWidth) / 2;
+            drawY = y;
+          }
+        }
+
+        // 绘制图片对象
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+        // 恢复状态
+        ctx.restore();
+
+        console.log('图片绘制完成, 模式:', fitMode, '缩放:', scale, '旋转:', rotation);
+      } catch (error) {
+        console.error('绘制图片失败:', error);
+      }
+    }).catch((err) => {
+      console.error('图片加载失败:', imagePath, err);
     });
   },
 
@@ -1675,11 +1756,20 @@ Page({
         // 确保Canvas有内容
         const imageData = ctx.getImageData(0, 0, that.data.canvasWidth, that.data.canvasHeight);
         if (imageData && imageData.data && imageData.data.length > 0) {
+          // 获取设备像素比，确保导出高清图片
+          const dpr = wx.getWindowInfo().pixelRatio || 2;
+
           wx.canvasToTempFilePath({
             canvas: canvas,
+            // 设置高质量导出参数
+            quality: 1.0, // 最高质量
+            fileType: 'png', // 使用PNG格式，无损压缩
+            // 导出实际Canvas尺寸（已经考虑了dpr）
+            destWidth: that.data.canvasWidth * dpr,
+            destHeight: that.data.canvasHeight * dpr,
             success: function (res) {
               wx.hideLoading();
-              console.log('Canvas导出成功:', res);
+              console.log('Canvas导出成功（高清）:', res);
               // 保存到历史记录
               that.saveToHistory(res.tempFilePath);
               // 保存到相册
@@ -2115,8 +2205,49 @@ Page({
 
   // 画布触摸开始
   onCanvasTouchStart (e) {
-    const x = e.touches[0].x;
-    const y = e.touches[0].y;
+    const touches = e.touches;
+    const x = touches[0].x;
+    const y = touches[0].y;
+
+    // 双指手势检测
+    if (touches.length === 2) {
+      // 计算两指之间的距离和角度
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+
+      const distance = this._calculateDistance(touch1.x, touch1.y, touch2.x, touch2.y);
+      const angle = this._calculateAngle(touch1.x, touch1.y, touch2.x, touch2.y);
+
+      // 计算两指中心点，判断是否在某个图片上
+      const centerX = (touch1.x + touch2.x) / 2;
+      const centerY = (touch1.y + touch2.y) / 2;
+      const hitIndex = this.getHitImageIndex(centerX, centerY);
+
+      if (hitIndex !== -1) {
+        // 记录手势起始状态
+        this._gestureStartDistance = distance;
+        this._gestureStartAngle = angle;
+        this._gestureImageIndex = hitIndex;
+
+        // 记录当前图片的缩放和旋转状态
+        this._gestureStartScale = this.data.imageScale[hitIndex] || 1.0;
+        this._gestureStartRotation = this.data.imageRotation[hitIndex] || 0;
+
+        // ✅ 初始化实时状态缓存（如果还没有初始化）
+        if (this._realtimeImageScale.length === 0) {
+          this._realtimeImageScale = [...this.data.imageScale];
+          this._realtimeImageRotation = [...this.data.imageRotation];
+        }
+
+        console.log('双指手势开始，图片索引:', hitIndex, '距离:', distance, '角度:', angle);
+
+        // 关闭工具条
+        if (this.data.showImageToolbar) {
+          this.hideImageToolbar();
+        }
+      }
+      return;
+    }
 
     // 编辑工具模式
     if (this.data.editMode && this.data.currentTool) {
@@ -2194,8 +2325,58 @@ Page({
 
   // 画布触摸移动
   onCanvasTouchMove (e) {
-    const x = e.touches[0].x;
-    const y = e.touches[0].y;
+    const touches = e.touches;
+    const x = touches[0].x;
+    const y = touches[0].y;
+
+    // 双指手势处理
+    if (touches.length === 2 && this._gestureImageIndex !== -1) {
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+
+      // 计算当前两指距离和角度
+      const currentDistance = this._calculateDistance(touch1.x, touch1.y, touch2.x, touch2.y);
+      const currentAngle = this._calculateAngle(touch1.x, touch1.y, touch2.x, touch2.y);
+
+      // 计算缩放比例变化
+      const scaleChange = currentDistance / this._gestureStartDistance;
+      const newScale = Math.max(0.5, Math.min(3.0, this._gestureStartScale * scaleChange));
+
+      // 计算旋转角度变化
+      const angleChange = currentAngle - this._gestureStartAngle;
+      const newRotation = (this._gestureStartRotation + angleChange) % 360;
+
+      // ✅ 更新实时状态缓存（不触发setData）
+      this._realtimeImageScale[this._gestureImageIndex] = newScale;
+      this._realtimeImageRotation[this._gestureImageIndex] = newRotation;
+
+      // ✅ 使用RAF实时绘制，不触发完整重绘
+      if (this._canvas && this._canvas.requestAnimationFrame) {
+        // 取消之前的RAF
+        if (this._rafId) {
+          this._canvas.cancelAnimationFrame(this._rafId);
+          this._rafId = null;
+        }
+
+        // 使用RAF实时绘制
+        this._rafId = this._canvas.requestAnimationFrame(() => {
+          this._isGestureDrawing = true;
+
+          // 实时绘制单个图片
+          this._drawSingleImageRealtime(this._gestureImageIndex, newScale, newRotation);
+
+          this._isGestureDrawing = false;
+          this._rafId = null;
+        });
+      } else {
+        // 降级方案：直接绘制
+        this._isGestureDrawing = true;
+        this._drawSingleImageRealtime(this._gestureImageIndex, newScale, newRotation);
+        this._isGestureDrawing = false;
+      }
+
+      return;
+    }
 
     // 编辑工具模式
     if (this.data.isDrawing && this.data.editMode) {
@@ -2235,6 +2416,48 @@ Page({
 
   // 画布触摸结束
   onCanvasTouchEnd (e) {
+    // 双指手势结束
+    if (this._gestureImageIndex !== -1) {
+      const index = this._gestureImageIndex;
+
+      // 从实时绘制中获取最终的缩放和旋转值
+      const touches = e.changedTouches || e.touches;
+      if (touches.length >= 2) {
+        const touch1 = touches[0];
+        const touch2 = touches[1];
+
+        const currentDistance = this._calculateDistance(touch1.x, touch1.y, touch2.x, touch2.y);
+        const currentAngle = this._calculateAngle(touch1.x, touch1.y, touch2.x, touch2.y);
+
+        const scaleChange = currentDistance / this._gestureStartDistance;
+        const finalScale = Math.max(0.5, Math.min(3.0, this._gestureStartScale * scaleChange));
+
+        const angleChange = currentAngle - this._gestureStartAngle;
+        const finalRotation = (this._gestureStartRotation + angleChange) % 360;
+
+        // ✅ 使用辅助方法安全更新
+        this._syncImageTransform(index, finalScale, finalRotation);
+
+        console.log('双指手势结束，保存状态 - 索引:', index, '缩放:', finalScale.toFixed(2), '旋转:', finalRotation.toFixed(0) + '°');
+
+        // 显示提示
+        wx.showToast({
+          title: `缩放${(finalScale * 100).toFixed(0)}% 旋转${finalRotation.toFixed(0)}°`,
+          icon: 'none',
+          duration: 1500,
+        });
+      }
+
+      // 重置手势状态
+      this._gestureImageIndex = -1;
+      this._gestureStartDistance = 0;
+      this._gestureStartAngle = 0;
+      this._gestureStartScale = 1.0;
+      this._gestureStartRotation = 0;
+
+      return;
+    }
+
     // 编辑工具模式
     if (this.data.isDrawing && this.data.editMode) {
       const {
@@ -2854,12 +3077,26 @@ Page({
 
       console.log('新布局槽位数:', template.imageCount, '已填充:', selectedImages.length);
 
+      // ✅ 初始化imageScale和imageRotation数组
+      const imageScale = [];
+      const imageRotation = [];
+      for (let i = 0; i < template.imageCount; i++) {
+        imageScale[i] = 1.0;
+        imageRotation[i] = 0;
+      }
+
+      // ✅ 同时初始化实时缓存
+      this._realtimeImageScale = [...imageScale];
+      this._realtimeImageRotation = [...imageRotation];
+
       this.setData({
         selectedLayout: index,
         currentLayoutTemplate: template,
         imageSlots: imageSlots,
         selectedImages: selectedImages,
         workflowStep: 'addImages',  // 进入添加图片阶段
+        imageScale: imageScale, // ✅ 初始化缩放数组
+        imageRotation: imageRotation, // ✅ 初始化旋转数组
       }, () => {
         // 刚切换完布局：立刻按新布局的张数刷新下方内联模板
         that.updateInlineTemplatesForCount(template.imageCount);
@@ -3004,11 +3241,25 @@ Page({
       }
     }
 
+    // ✅ 初始化imageScale和imageRotation数组
+    const imageScale = [];
+    const imageRotation = [];
+    for (let i = 0; i < template.imageCount; i++) {
+      imageScale[i] = 1.0;
+      imageRotation[i] = 0;
+    }
+
+    // ✅ 同时初始化实时缓存
+    this._realtimeImageScale = [...imageScale];
+    this._realtimeImageRotation = [...imageRotation];
+
     this.setData({
       currentLayoutTemplate: template,
       imageSlots,
       selectedImages,
       workflowStep: 'editing',
+      imageScale: imageScale, // ✅ 初始化缩放数组
+      imageRotation: imageRotation, // ✅ 初始化旋转数组
     }, () => {
       if (!that._ctx || !that._canvas) {
         setTimeout(() => {
@@ -3049,6 +3300,327 @@ Page({
           });
         }
       },
+    });
+  },
+
+  // ========== 图片缓存系统 ==========
+
+  // 实时绘制单个图片（用于手势操作）
+  _drawSingleImageRealtime (imageIndex, scale, rotation) {
+    const that = this;
+    const ctx = this._ctx;
+    const { imageSlots, imagePositions, cornerRadius, backgroundPosterUrl, backgroundColor } = this.data;
+
+    if (!ctx || !imagePositions || !imagePositions[imageIndex]) {
+      return;
+    }
+
+    const slot = imageSlots[imageIndex];
+    if (!slot || slot.isEmpty || !slot.image) {
+      return;
+    }
+
+    const pos = imagePositions[imageIndex];
+    const imagePath = slot.image.path;
+
+    // 从缓存获取图片
+    const img = this._imageCache[imagePath];
+    if (!img) {
+      console.warn('图片未缓存，无法实时绘制:', imagePath);
+      return;
+    }
+
+    // 计算需要清除的区域（考虑旋转和缩放后的边界）
+    const maxScale = Math.max(scale, 1.5); // 预留足够空间
+    const clearPadding = Math.max(pos.width, pos.height) * maxScale * 0.5;
+    const clearX = pos.x - clearPadding;
+    const clearY = pos.y - clearPadding;
+    const clearWidth = pos.width + clearPadding * 2;
+    const clearHeight = pos.height + clearPadding * 2;
+
+    // 保存整个Canvas状态
+    ctx.save();
+
+    // 清除该图片区域
+    ctx.clearRect(clearX, clearY, clearWidth, clearHeight);
+
+    // 重绘背景（只在清除的区域）
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(clearX, clearY, clearWidth, clearHeight);
+
+    // 如果有背景海报，重绘背景海报的这部分区域
+    if (backgroundPosterUrl && this._imageCache[backgroundPosterUrl]) {
+      const bgImg = this._imageCache[backgroundPosterUrl];
+      const { canvasWidth, canvasHeight } = this.data;
+
+      // 计算背景图的绘制参数
+      const imgRatio = bgImg.width / bgImg.height;
+      const canvasRatio = canvasWidth / canvasHeight;
+      let bgDrawWidth, bgDrawHeight, bgDrawX, bgDrawY;
+
+      if (imgRatio > canvasRatio) {
+        bgDrawHeight = canvasHeight;
+        bgDrawWidth = bgDrawHeight * imgRatio;
+        bgDrawX = (canvasWidth - bgDrawWidth) / 2;
+        bgDrawY = 0;
+      } else {
+        bgDrawWidth = canvasWidth;
+        bgDrawHeight = bgDrawWidth / imgRatio;
+        bgDrawX = 0;
+        bgDrawY = (canvasHeight - bgDrawHeight) / 2;
+      }
+
+      // 只绘制清除区域的背景
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clearX, clearY, clearWidth, clearHeight);
+      ctx.clip();
+      ctx.drawImage(bgImg, bgDrawX, bgDrawY, bgDrawWidth, bgDrawHeight);
+      ctx.restore();
+    }
+
+    // 重绘其他图片（在清除区域内的）
+    imageSlots.forEach((otherSlot, otherIndex) => {
+      if (otherIndex === imageIndex || otherSlot.isEmpty || !otherSlot.image) {
+        return;
+      }
+
+      const otherPos = imagePositions[otherIndex];
+      if (!otherPos) return;
+
+      // 检查是否与清除区域相交
+      const intersects = !(
+        otherPos.x + otherPos.width < clearX ||
+        otherPos.x > clearX + clearWidth ||
+        otherPos.y + otherPos.height < clearY ||
+        otherPos.y > clearY + clearHeight
+      );
+
+      if (intersects) {
+        const otherImg = this._imageCache[otherSlot.image.path];
+        if (otherImg) {
+          // ✅ 优先使用实时状态，如果没有则使用data中的状态
+          const otherScale = this._realtimeImageScale[otherIndex] !== undefined
+            ? this._realtimeImageScale[otherIndex]
+            : (this.data.imageScale[otherIndex] || 1.0);
+          const otherRotation = this._realtimeImageRotation[otherIndex] !== undefined
+            ? this._realtimeImageRotation[otherIndex]
+            : (this.data.imageRotation[otherIndex] || 0);
+          this._drawImageDirect(otherImg, otherPos, otherScale, otherRotation);
+        }
+      }
+    });
+
+    // 绘制当前图片（使用新的缩放和旋转）
+    this._drawImageDirect(img, pos, scale, rotation);
+
+    // 恢复Canvas状态
+    ctx.restore();
+  },
+
+  // 直接绘制图片（不加载，使用已缓存的图片对象）
+  _drawImageDirect (img, pos, scale, rotation) {
+    const ctx = this._ctx;
+    const { cornerRadius } = this.data;
+
+    ctx.save();
+
+    // ✅ 启用高质量图像渲染
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high'; // 'low' | 'medium' | 'high'
+
+    // 创建圆角裁剪路径
+    this.roundRect(ctx, pos.x, pos.y, pos.width, pos.height, cornerRadius);
+    ctx.clip();
+
+    // 计算中心点
+    const centerX = pos.x + pos.width / 2;
+    const centerY = pos.y + pos.height / 2;
+
+    // 应用变换
+    if (rotation !== 0 || scale !== 1.0) {
+      ctx.translate(centerX, centerY);
+      if (rotation !== 0) {
+        ctx.rotate(rotation * Math.PI / 180);
+      }
+      if (scale !== 1.0) {
+        ctx.scale(scale, scale);
+      }
+      ctx.translate(-centerX, -centerY);
+    }
+
+    // 计算图片绘制尺寸
+    const imgRatio = img.width / img.height;
+    const containerRatio = pos.width / pos.height;
+    const fitMode = this.data.imageFitMode || 'cover';
+
+    let drawWidth, drawHeight, drawX, drawY;
+
+    if (fitMode === 'cover') {
+      if (imgRatio > containerRatio) {
+        drawHeight = pos.height;
+        drawWidth = pos.height * imgRatio;
+        drawX = pos.x + (pos.width - drawWidth) / 2;
+        drawY = pos.y;
+      } else {
+        drawWidth = pos.width;
+        drawHeight = pos.width / imgRatio;
+        drawX = pos.x;
+        drawY = pos.y + (pos.height - drawHeight) / 2;
+      }
+    } else {
+      if (imgRatio > containerRatio) {
+        drawWidth = pos.width;
+        drawHeight = pos.width / imgRatio;
+        drawX = pos.x;
+        drawY = pos.y + (pos.height - drawHeight) / 2;
+      } else {
+        drawHeight = pos.height;
+        drawWidth = pos.height * imgRatio;
+        drawX = pos.x + (pos.width - drawWidth) / 2;
+        drawY = pos.y;
+      }
+    }
+
+    // 绘制图片
+    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+    ctx.restore();
+  },
+
+  // 预加载并缓存图片
+  _loadAndCacheImage (imagePath) {
+    const that = this;
+
+    // 如果已经缓存，直接返回
+    if (this._imageCache[imagePath]) {
+      return Promise.resolve(this._imageCache[imagePath]);
+    }
+
+    // 如果正在加载，等待加载完成
+    if (this._imageCacheStatus[imagePath] === 'loading') {
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (that._imageCacheStatus[imagePath] === 'loaded') {
+            clearInterval(checkInterval);
+            resolve(that._imageCache[imagePath]);
+          } else if (that._imageCacheStatus[imagePath] === 'error') {
+            clearInterval(checkInterval);
+            resolve(null);
+          }
+        }, 50);
+      });
+    }
+
+    // 开始加载
+    this._imageCacheStatus[imagePath] = 'loading';
+
+    return new Promise((resolve, reject) => {
+      const canvas = that._canvas;
+      if (!canvas) {
+        console.error('Canvas未初始化，无法加载图片');
+        that._imageCacheStatus[imagePath] = 'error';
+        reject(new Error('Canvas未初始化'));
+        return;
+      }
+
+      const img = canvas.createImage();
+
+      img.onload = () => {
+        console.log('图片缓存成功:', imagePath);
+        that._imageCache[imagePath] = img;
+        that._imageCacheStatus[imagePath] = 'loaded';
+        resolve(img);
+      };
+
+      img.onerror = (err) => {
+        console.error('图片加载失败:', imagePath, err);
+        that._imageCacheStatus[imagePath] = 'error';
+        reject(err);
+      };
+
+      img.src = imagePath;
+    });
+  },
+
+  // 预加载所有图片
+  _preloadAllImages () {
+    const { imageSlots, backgroundPosterUrl } = this.data;
+
+    const loadPromises = [];
+
+    // 预加载图片槽位中的图片
+    if (imageSlots && imageSlots.length > 0) {
+      imageSlots
+        .filter(slot => !slot.isEmpty && slot.image && slot.image.path)
+        .forEach(slot => {
+          loadPromises.push(this._loadAndCacheImage(slot.image.path));
+        });
+    }
+
+    // ✅ 预加载背景海报图片
+    if (backgroundPosterUrl) {
+      console.log('预加载背景海报:', backgroundPosterUrl);
+      loadPromises.push(this._loadAndCacheImage(backgroundPosterUrl));
+    }
+
+    if (loadPromises.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return Promise.all(loadPromises);
+  },
+
+  // 清除图片缓存
+  _clearImageCache () {
+    this._imageCache = {};
+    this._imageCacheStatus = {};
+    console.log('图片缓存已清除');
+  },
+
+  // ========== 手势辅助函数 ==========
+
+  // 计算两点之间的距离
+  _calculateDistance (x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    return Math.sqrt(dx * dx + dy * dy);
+  },
+
+  // 计算两点连线与水平线的夹角（弧度）
+  _calculateAngle (x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    return Math.atan2(dy, dx) * 180 / Math.PI;
+  },
+
+  // ========== 辅助方法：同步更新imageScale和imageRotation ==========
+
+  /**
+   * 安全地更新imageScale和imageRotation，同时同步到实时缓存
+   * @param {Number} index 图片索引
+   * @param {Number} scale 缩放值（可选）
+   * @param {Number} rotation 旋转值（可选）
+   */
+  _syncImageTransform (index, scale, rotation) {
+    // 创建新数组
+    const imageScale = [...this.data.imageScale];
+    const imageRotation = [...this.data.imageRotation];
+
+    // 更新值
+    if (scale !== undefined) {
+      imageScale[index] = scale;
+      this._realtimeImageScale[index] = scale;
+    }
+    if (rotation !== undefined) {
+      imageRotation[index] = rotation;
+      this._realtimeImageRotation[index] = rotation;
+    }
+
+    // 更新到data
+    this.setData({
+      imageScale: imageScale,
+      imageRotation: imageRotation,
     });
   },
 
@@ -3178,7 +3750,7 @@ Page({
     if (index === -1) return;
 
     console.log('换一张图片，索引:', index);
-    this.hideImageToolbar();
+    // 不再立即关闭工具条，等操作完成后再关闭
 
     // 选择新图片
     wx.chooseMedia({
@@ -3255,23 +3827,20 @@ Page({
     console.log('旋转图片，索引:', index);
 
     // 获取当前旋转角度
-    const imageRotation = this.data.imageRotation;
-    const currentRotation = imageRotation[index] || 0;
+    const currentRotation = this.data.imageRotation[index] || 0;
     const newRotation = (currentRotation + 90) % 360;
 
-    // 更新旋转角度
-    imageRotation[index] = newRotation;
-
-    this.setData({
-      imageRotation: imageRotation,
-    });
+    // ✅ 使用辅助方法安全更新
+    this._syncImageTransform(index, undefined, newRotation);
 
     // 重新绘制画布
     this.updateCanvas();
 
+    // 不关闭工具条，允许连续操作
     wx.showToast({
       title: `旋转${newRotation}°`,
       icon: 'none',
+      duration: 1000,
     });
   },
 
@@ -3283,23 +3852,20 @@ Page({
     console.log('放大图片，索引:', index);
 
     // 获取当前缩放比例
-    const imageScale = this.data.imageScale;
-    const currentScale = imageScale[index] || 1.0;
+    const currentScale = this.data.imageScale[index] || 1.0;
     const newScale = Math.min(currentScale + 0.1, 2.0); // 最大2倍
 
-    // 更新缩放比例
-    imageScale[index] = newScale;
-
-    this.setData({
-      imageScale: imageScale,
-    });
+    // ✅ 使用辅助方法安全更新
+    this._syncImageTransform(index, newScale, undefined);
 
     // 重新绘制画布
     this.updateCanvas();
 
+    // 不关闭工具条，允许连续操作
     wx.showToast({
       title: `${Math.round(newScale * 100)}%`,
       icon: 'none',
+      duration: 1000,
     });
   },
 
@@ -3311,23 +3877,41 @@ Page({
     console.log('缩小图片，索引:', index);
 
     // 获取当前缩放比例
-    const imageScale = this.data.imageScale;
-    const currentScale = imageScale[index] || 1.0;
+    const currentScale = this.data.imageScale[index] || 1.0;
     const newScale = Math.max(currentScale - 0.1, 0.5); // 最小0.5倍
 
-    // 更新缩放比例
-    imageScale[index] = newScale;
-
-    this.setData({
-      imageScale: imageScale,
-    });
+    // ✅ 使用辅助方法安全更新
+    this._syncImageTransform(index, newScale, undefined);
 
     // 重新绘制画布
     this.updateCanvas();
 
+    // 不关闭工具条，允许连续操作
     wx.showToast({
       title: `${Math.round(newScale * 100)}%`,
       icon: 'none',
+      duration: 1000,
+    });
+  },
+
+  // 工具条 - 还原
+  onToolbarReset () {
+    const index = this.data.toolbarImageIndex;
+    if (index === -1) return;
+
+    console.log('还原图片，索引:', index);
+
+    // ✅ 使用辅助方法安全更新
+    this._syncImageTransform(index, 1.0, 0);
+
+    // 重新绘制画布
+    this.updateCanvas();
+
+    // 不关闭工具条
+    wx.showToast({
+      title: '已还原',
+      icon: 'success',
+      duration: 1000,
     });
   },
 
@@ -3344,10 +3928,11 @@ Page({
       content: '确定要删除这张图片吗？',
       success: (res) => {
         if (res.confirm) {
-          // 清空该槽位
-          const imageSlots = this.data.imageSlots;
-          const selectedImages = this.data.selectedImages;
+          // ✅ 创建新数组（避免直接修改data中的引用）
+          const imageSlots = [...this.data.imageSlots];
+          const selectedImages = [...this.data.selectedImages];
 
+          // 清空该槽位
           imageSlots[index] = {
             isEmpty: true,
             image: null,
@@ -3355,18 +3940,13 @@ Page({
 
           selectedImages[index] = null;
 
-          // 清除该图片的缩放和旋转设置
-          const imageScale = this.data.imageScale;
-          const imageRotation = this.data.imageRotation;
-          delete imageScale[index];
-          delete imageRotation[index];
-
           this.setData({
             imageSlots: imageSlots,
             selectedImages: selectedImages,
-            imageScale: imageScale,
-            imageRotation: imageRotation,
           });
+
+          // ✅ 使用辅助方法安全更新缩放和旋转
+          this._syncImageTransform(index, 1.0, 0);
 
           // 重新绘制画布
           this.updateCanvas();
@@ -3762,60 +4342,51 @@ Page({
    * @returns {Promise} 绘制完成的Promise
    */
   drawBackgroundPoster (ctx, posterUrl, canvasWidth, canvasHeight) {
-    return new Promise((resolve, reject) => {
-      const canvas = this._canvas;
-      if (!canvas) {
-        console.error('Canvas未初始化');
-        reject(new Error('Canvas未初始化'));
+    // ✅ 优先使用缓存的图片
+    return this._loadAndCacheImage(posterUrl).then((img) => {
+      if (!img) {
+        console.error('背景海报加载失败');
         return;
       }
 
-      // 创建图片对象
-      const img = canvas.createImage();
+      console.log('背景海报加载成功（使用缓存），原始尺寸:', img.width, 'x', img.height);
 
-      img.onload = () => {
-        console.log('背景海报加载成功');
+      // 保存当前状态
+      ctx.save();
 
-        // 保存当前状态
-        ctx.save();
+      // ✅ 启用高质量图像渲染
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
 
-        // 计算图片绘制尺寸（填充整个画布）
-        const imgRatio = img.width / img.height;
-        const canvasRatio = canvasWidth / canvasHeight;
+      // 计算图片绘制尺寸（填充整个画布）
+      const imgRatio = img.width / img.height;
+      const canvasRatio = canvasWidth / canvasHeight;
 
-        let drawWidth, drawHeight, drawX, drawY;
+      let drawWidth, drawHeight, drawX, drawY;
 
-        if (imgRatio > canvasRatio) {
-          // 图片更宽，以高度为准
-          drawHeight = canvasHeight;
-          drawWidth = drawHeight * imgRatio;
-          drawX = (canvasWidth - drawWidth) / 2;
-          drawY = 0;
-        } else {
-          // 图片更高，以宽度为准
-          drawWidth = canvasWidth;
-          drawHeight = drawWidth / imgRatio;
-          drawX = 0;
-          drawY = (canvasHeight - drawHeight) / 2;
-        }
+      if (imgRatio > canvasRatio) {
+        // 图片更宽，以高度为准
+        drawHeight = canvasHeight;
+        drawWidth = drawHeight * imgRatio;
+        drawX = (canvasWidth - drawWidth) / 2;
+        drawY = 0;
+      } else {
+        // 图片更高，以宽度为准
+        drawWidth = canvasWidth;
+        drawHeight = drawWidth / imgRatio;
+        drawX = 0;
+        drawY = (canvasHeight - drawHeight) / 2;
+      }
 
-        // 绘制背景图片
-        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+      // ✅ 使用高质量绘制背景图片（Canvas已经通过DPR缩放）
+      ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
-        // 恢复状态
-        ctx.restore();
+      // 恢复状态
+      ctx.restore();
 
-        console.log('背景海报绘制完成');
-        resolve();
-      };
-
-      img.onerror = (err) => {
-        console.error('背景海报加载失败:', err);
-        reject(err);
-      };
-
-      // 设置图片源
-      img.src = posterUrl;
+      console.log('背景海报绘制完成，绘制尺寸:', drawWidth, 'x', drawHeight);
+    }).catch((err) => {
+      console.error('背景海报绘制失败:', err);
     });
   },
 
@@ -3921,6 +4492,7 @@ Page({
    * @param {Object} e 事件对象
    */
   onPosterSelect (e) {
+    const that = this;
     const index = parseInt(e.currentTarget.dataset.index);
     const poster = this.data.posterList[index];
 
@@ -3934,19 +4506,39 @@ Page({
     }
 
     console.log('选择海报:', poster);
+    const posterUrl = poster.thumbnail.url;
 
-    // 设置背景海报URL
-    this.setData({
-      backgroundPosterUrl: poster.thumbnail.url
+    // ✅ 显示加载提示
+    wx.showLoading({
+      title: '加载背景中...',
+      mask: true
     });
 
-    // 重新绘制画布
-    this.updateCanvas();
+    // ✅ 先预加载背景图到缓存
+    this._loadAndCacheImage(posterUrl).then(() => {
+      console.log('背景海报预加载完成:', posterUrl);
 
-    wx.showToast({
-      title: '背景已设置',
-      icon: 'success',
-      duration: 1500
+      // ✅ 预加载完成后再设置URL（此时缓存中已有图片，不会白屏）
+      that.setData({
+        backgroundPosterUrl: posterUrl
+      });
+
+      // ✅ 重新绘制画布（使用缓存的背景图，无白屏）
+      that.updateCanvas();
+
+      wx.hideLoading();
+      wx.showToast({
+        title: '背景已设置',
+        icon: 'success',
+        duration: 1500
+      });
+    }).catch((err) => {
+      console.error('背景海报加载失败:', err);
+      wx.hideLoading();
+      wx.showToast({
+        title: '背景加载失败',
+        icon: 'none'
+      });
     });
   },
 });

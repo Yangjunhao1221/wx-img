@@ -307,25 +307,29 @@
     </view>
 
     <!-- 图片操作工具条 - 使用 cover-view 覆盖在 Canvas 上 -->
-    <cover-view class="image-toolbar" wx:if="{{showImageToolbar}}" style="left: {{toolbarPosition.x}}px; top: {{toolbarPosition.y}}px;">
+    <cover-view class="image-toolbar" wx:if="{{showImageToolbar}}" style="left: {{toolbarPosition.x}}px; top: {{toolbarPosition.y}}px;" catchtap="stopPropagation">
       <cover-view class="toolbar-container">
-        <cover-view class="toolbar-item" bindtap="onToolbarReplace">
+        <cover-view class="toolbar-item" catchtap="onToolbarReplace">
           <cover-view class="toolbar-icon">🖼️</cover-view>
           <cover-view class="toolbar-label">换一张</cover-view>
         </cover-view>
-        <cover-view class="toolbar-item" bindtap="onToolbarRotate">
+        <cover-view class="toolbar-item" catchtap="onToolbarRotate">
           <cover-view class="toolbar-icon">🔄</cover-view>
           <cover-view class="toolbar-label">旋转</cover-view>
         </cover-view>
-        <cover-view class="toolbar-item" bindtap="onToolbarZoomIn">
+        <cover-view class="toolbar-item" catchtap="onToolbarZoomIn">
           <cover-view class="toolbar-icon">➕</cover-view>
           <cover-view class="toolbar-label">放大</cover-view>
         </cover-view>
-        <cover-view class="toolbar-item" bindtap="onToolbarZoomOut">
+        <cover-view class="toolbar-item" catchtap="onToolbarZoomOut">
           <cover-view class="toolbar-icon">➖</cover-view>
           <cover-view class="toolbar-label">缩小</cover-view>
         </cover-view>
-        <cover-view class="toolbar-item" bindtap="onToolbarDelete">
+        <cover-view class="toolbar-item" catchtap="onToolbarReset">
+          <cover-view class="toolbar-icon">↩️</cover-view>
+          <cover-view class="toolbar-label">还原</cover-view>
+        </cover-view>
+        <cover-view class="toolbar-item" catchtap="onToolbarDelete">
           <cover-view class="toolbar-icon">🗑️</cover-view>
           <cover-view class="toolbar-label">删除</cover-view>
         </cover-view>

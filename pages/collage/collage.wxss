@@ -1131,6 +1131,20 @@
   /* 不设置固定宽度，让内容自适应 */
   /* cover-view 不支持 transform，在 JS 中直接计算 left 值 */
   z-index: 10000; /* 最高层级，确保在所有元素之上 */
+  /* 添加平滑过渡动画 */
+  opacity: 0;
+  animation: toolbarFadeIn 0.2s ease-out forwards;
+}
+
+@keyframes toolbarFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .toolbar-container {
@@ -1141,6 +1155,7 @@
   border-radius: 10px;
   padding: 6px 8px;
   white-space: nowrap; /* 防止换行 */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .toolbar-item {
